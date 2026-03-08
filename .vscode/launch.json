@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Ker CLI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "ker.main",
+      "args": ["cli"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": true
+    },
+    {
+      "name": "Ker Gateway",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "ker.main",
+      "args": ["gateway"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": true
+    }
+  ]
+}

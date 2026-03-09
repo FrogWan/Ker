@@ -26,10 +26,9 @@ usage guidelines and environment-specific notes — not tool definitions.
 
 ## Memory Tools
 
-- Use `read_memory` before answering questions about past sessions or context.
-- Use `read_error_log` for self-healing: check what went wrong before and avoid repeating it.
-- Write daily notes for anything the user might want recalled later.
-- Distill recurring patterns into MEMORY.md for long-term retention.
+- Use `write_memory` to save important facts (user preferences, project info, recurring patterns) to long-term memory. These are always available in your context.
+- Use `read_memory` to search recent conversations and session context. Use when recalling what was discussed recently or finding past decisions.
+- Long-term memory (MEMORY.md) is automatically loaded every turn — no need to search it.
 
 ## Skill Tool
 
@@ -43,20 +42,6 @@ usage guidelines and environment-specific notes — not tool definitions.
   workspace monitoring, and tasks that benefit from agent memory.
 - **Cron**: Exact timing, isolated execution. Good for scheduled jobs that should run
   independently (backups, reports, deployments).
-
-## Long Task (long_task)
-
-- Use `long_task` for complex, multi-step work that benefits from **parallel execution**
-  across isolated git worktrees (e.g. refactoring multiple modules, building
-  frontend+backend+tests simultaneously, exploring multiple approaches).
-- **Workflow**: `plan` → review subtask decomposition → `start` → poll with `status` → `result`.
-- Each worker gets its own git worktree branch. Branches merge back on completion.
-- **vs `spawn`**: `spawn` runs a single subtask using the internal agent loop (shared
-  context, no file isolation). `long_task` spawns external Claude Code or Codex
-  instances with full file isolation per worker.
-- Worker agent defaults to `claude`; set `worker_agent="codex"` for Codex workers.
-- Max 2 retry attempts per subtask. Failed subtasks auto-retry once, then stay failed.
-- Use `/longtask` to view all tasks; `/longtask <id>` for detailed subtask status.
 
 ## Self-Evolution (self_evolve)
 

@@ -24,7 +24,7 @@ def create_provider(settings: Settings) -> LLMProvider:
 
     if provider_name in ("github_copilot", "copilot"):
         from ker.llm.github_copilot import GitHubCopilotProvider
-        return GitHubCopilotProvider(token=settings.github_copilot_token)
+        return GitHubCopilotProvider(ker_root=settings.ker_root, token=settings.github_copilot_token)
 
     log.warning("Unknown LLM provider '%s', falling back to Anthropic", provider_name)
     from ker.llm.anthropic_provider import AnthropicProvider

@@ -31,7 +31,6 @@ def _handle_exact(gw: Gateway, text: str) -> bool:
         "/heartbeat": _cmd_heartbeat,
         "/trigger": _cmd_trigger,
         "/cron": _cmd_cron,
-        "/longtask": _cmd_longtask,
     }
     handler = handlers.get(text)
     if handler is None:
@@ -48,7 +47,6 @@ def _handle_prefix(gw: Gateway, text: str) -> bool:
         ("/rename ", _cmd_rename),
         ("/search ", _cmd_search),
         ("/cron-run ", _cmd_cron_run),
-        ("/longtask ", _cmd_longtask_detail),
     ]
     for prefix, handler in prefixes:
         if text.startswith(prefix):
@@ -64,7 +62,6 @@ def _cmd_help(gw: Gateway, text: str) -> None:
     print("  /sessions /new <name> /switch <name> /rename <name> /context /compact")
     print("  /prompt /skills /search <query>")
     print("  /heartbeat /trigger /cron /cron-run <job_id>")
-    print("  /longtask [task_id]")
 
 
 def _cmd_agents(gw: Gateway, text: str) -> None:
@@ -187,30 +184,3 @@ def _cmd_cron_run(gw: Gateway, text: str) -> None:
     print(f"queued job {job_id}")
 
 
-def _cmd_longtask(gw: Gateway, text: str) -> None:
-    tasks = gw.longtask_board.list_tasks()
-    if not tasks:
-        print("no long tasks")
-        return
-    for t in tasks:
-        done = sum(1 for s in t.subtasks if s.status == "done")
-        total = len(t.subtasks)
-        active = "active" if gw.longtask_orchestrator.is_task_active(t.id) else "idle"
-        print(f"- {t.id}  {t.status:<10} {done}/{total} done  [{active}]  {t.title}")
-
-
-def _cmd_longtask_detail(gw: Gateway, text: str) -> None:
-    task_id = text.split(maxsplit=1)[1].strip()
-    task = gw.longtask_board.get_task(task_id)
-    if task is None:
-        print(f"task {task_id} not found")
-        return
-    active_workers = gw.longtask_workers.get_active_workers(task_id)
-    print(f"Task: {task.title} ({task.id})")
-    print(f"Status: {task.status}  Workers: {len(active_workers)}/{task.max_workers}  Agent: {task.worker_agent}")
-    print(f"Created: {format_ts(task.created_at)}  Updated: {format_ts(task.updated_at)}")
-    print()
-    for st in task.subtasks:
-        blocked = f" blocked_by={st.blocked_by}" if st.blocked_by else ""
-        owner = f" [{st.owner}]" if st.owner else ""
-        print(f"  {st.id}  {st.status:<8}{owner}{blocked}  {st.subject}")

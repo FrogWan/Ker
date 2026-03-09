@@ -25,9 +25,6 @@ from ker.gateway.commands import dispatch_command
 from ker.llm.base import LLMProvider
 from ker.llm.provider_factory import create_provider
 from ker.logger import get_logger
-from ker.longtask.orchestrator import LongTaskOrchestrator
-from ker.longtask.task_board import TaskBoard
-from ker.longtask.worker import WorkerManager
 from ker.scheduler.cron import CronService
 from ker.scheduler.heartbeat import HeartbeatRunner
 from ker.tools.tool_base import ToolContext
@@ -73,23 +70,6 @@ class Gateway:
             run_payload=self._run_cron_payload,
         )
 
-        # LongTask orchestrator
-        self.longtask_board = TaskBoard(
-            ker_root=settings.ker_root,
-            workspace=settings.workspace,
-        )
-        self.longtask_workers = WorkerManager(
-            workspace=settings.workspace,
-            ker_root=settings.ker_root,
-            task_board=self.longtask_board,
-        )
-        self.longtask_orchestrator = LongTaskOrchestrator(
-            task_board=self.longtask_board,
-            worker_manager=self.longtask_workers,
-            outbound_queue=self.outbound_queue,
-            ker_root=settings.ker_root,
-        )
-
         # Tool registry
         self.tool_ctx = ToolContext(
             workspace=settings.workspace,
@@ -98,7 +78,7 @@ class Gateway:
             skills_manager=self.skills_manager,
             subagent_manager=self.subagents,
             cron_service=self.cron,
-            longtask_orchestrator=self.longtask_orchestrator,
+            outbound_queue=self.outbound_queue,
         )
         self.tool_registry = ToolRegistry(self.tool_ctx)
         self._mcp_stack = AsyncExitStack()
@@ -157,7 +137,7 @@ class Gateway:
                 "## Workspace\n"
                 "- State is stored under `.ker/` in the project root.\n"
                 "- Daily memory captures context across sessions.\n"
-                "- Use `read_memory` for history and `read_error_log` for self-healing.\n"
+                "- Use `read_memory` for history and context.\n"
                 "- Skills encode specialized workflows — scan them before starting tasks.\n",
                 encoding="utf-8",
             )
@@ -282,6 +262,14 @@ class Gateway:
                                     session_name=inbound.session_name,
                                 )
                             )
+                        # Push updated agents-info after session-changing commands
+                        if text.startswith(("/new ", "/switch ", "/rename ", "/switch-agent ")):
+                            agents_info = self._build_agents_info()
+                            for ch in self.channels.values():
+                                try:
+                                    await ch.push_agents_info(agents_info)
+                                except Exception:
+                                    pass
                         continue
 
                 # Set context for tool execution
@@ -397,10 +385,6 @@ class Gateway:
                 },
                 "subagents": {
                     "running": self.subagents.get_running_count(),
-                },
-                "longtasks": {
-                    "active": len(self.longtask_orchestrator._active_tasks),
-                    "total": len(self.longtask_board.list_tasks()),
                 },
             }
             for ch in self.channels.values():

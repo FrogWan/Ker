@@ -20,6 +20,10 @@ class MemoryHit:
     snippet: str
 
 
+MEMORY_SECTIONS = ["user", "project", "preferences", "patterns", "general"]
+DEDUP_THRESHOLD = 0.70
+
+
 class MemoryStore:
     def __init__(self, workspace: Path, ker_root: Path) -> None:
         self.workspace = workspace
@@ -28,6 +32,188 @@ class MemoryStore:
     @property
     def error_log_path(self) -> Path:
         return self.ker_root / "memory" / "ERROR_LOG.jsonl"
+
+    @property
+    def memory_md_path(self) -> Path:
+        return self.ker_root / "MEMORY.md"
+
+    # ── Long-term memory ───────────────────────────────────────────
+
+    def read_long_term(self) -> str:
+        """Return full text of MEMORY.md, or empty string if missing."""
+        if self.memory_md_path.exists():
+            return self.memory_md_path.read_text(encoding="utf-8")
+        return ""
+
+    def write_fact(self, fact: str, category: str = "general", action: str = "add") -> str:
+        """Add or remove a fact in MEMORY.md under the given category section."""
+        fact = fact.strip()
+        if not fact:
+            return "Error: empty fact"
+        category = category.lower()
+        if category not in MEMORY_SECTIONS:
+            category = "general"
+
+        # Read or create MEMORY.md
+        if self.memory_md_path.exists():
+            text = self.memory_md_path.read_text(encoding="utf-8")
+        else:
+            text = "# Memory\n"
+
+        sections = self._parse_memory_sections(text)
+
+        if action == "remove":
+            return self._remove_fact(sections, fact, category)
+
+        # action == "add"
+        return self._add_fact(sections, fact, category)
+
+    def _parse_memory_sections(self, text: str) -> dict[str, list[str]]:
+        """Parse MEMORY.md into {section_name: [bullet_lines]}."""
+        sections: dict[str, list[str]] = {s: [] for s in MEMORY_SECTIONS}
+        current: str | None = None
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                header = stripped[3:].strip().lower()
+                current = header if header in MEMORY_SECTIONS else None
+            elif current and stripped.startswith("- "):
+                sections[current].append(stripped[2:].strip())
+        return sections
+
+    def _write_memory_sections(self, sections: dict[str, list[str]]) -> None:
+        """Write sections back to MEMORY.md."""
+        lines = ["# Memory\n"]
+        for section in MEMORY_SECTIONS:
+            bullets = sections.get(section, [])
+            if not bullets:
+                continue
+            lines.append(f"## {section.capitalize()}\n")
+            for b in bullets:
+                lines.append(f"- {b}")
+            lines.append("")
+        self.memory_md_path.parent.mkdir(parents=True, exist_ok=True)
+        self.memory_md_path.write_text("\n".join(lines), encoding="utf-8")
+
+    def _token_overlap(self, a: str, b: str) -> float:
+        """Return overlap coefficient: |intersection| / |smaller set|.
+
+        This handles the case where a short fact is expanded into a longer
+        version — containment stays high even when one side has many new tokens.
+        """
+        ta = set(self._tokenize(a))
+        tb = set(self._tokenize(b))
+        if not ta or not tb:
+            return 0.0
+        return len(ta & tb) / min(len(ta), len(tb))
+
+    def _add_fact(self, sections: dict[str, list[str]], fact: str, category: str) -> str:
+        bullets = sections[category]
+        # Dedup check: find best-matching existing bullet
+        best_idx, best_score = -1, 0.0
+        for i, existing in enumerate(bullets):
+            score = self._token_overlap(fact, existing)
+            if score > best_score:
+                best_score = score
+                best_idx = i
+
+        if best_score >= DEDUP_THRESHOLD:
+            # If new fact is longer (more detailed), replace old; otherwise skip
+            if len(fact) > len(bullets[best_idx]):
+                old = bullets[best_idx]
+                bullets[best_idx] = fact
+                self._write_memory_sections(sections)
+                return f"Updated existing fact in {category}: '{old}' → '{fact}'"
+            return f"Already remembered (similar entry exists in {category})"
+
+        bullets.append(fact)
+        self._write_memory_sections(sections)
+        return f"Saved to {category}: {fact}"
+
+    def _remove_fact(self, sections: dict[str, list[str]], fact: str, category: str) -> str:
+        bullets = sections[category]
+        if not bullets:
+            return f"No facts found in {category} to remove"
+
+        best_idx, best_score = -1, 0.0
+        for i, existing in enumerate(bullets):
+            score = self._token_overlap(fact, existing)
+            if score > best_score:
+                best_score = score
+                best_idx = i
+
+        if best_score < 0.3:
+            return f"No matching fact found in {category}"
+
+        removed = bullets.pop(best_idx)
+        self._write_memory_sections(sections)
+        return f"Removed from {category}: {removed}"
+
+    # ── Short-term memory ──────────────────────────────────────────
+
+    def search_short_term(
+        self, query: str, agent_name: str = "", top_k: int = 5, source: str = "all"
+    ) -> list[MemoryHit]:
+        """Search ephemeral sources only (daily, chat history, HISTORY.md).
+
+        Does NOT search MEMORY.md (already in system prompt) or ERROR_LOG.jsonl.
+        """
+        chunks = self._load_short_term_chunks(agent_name, source)
+        if not chunks:
+            return []
+        return self._score_chunks(chunks, query, top_k)
+
+    def _load_short_term_chunks(self, agent_name: str, source: str = "all") -> list[dict]:
+        """Load chunks from ephemeral sources, respecting source filter."""
+        chunks: list[dict] = []
+
+        # Daily files
+        if source in ("all", "daily"):
+            daily_dir = self.ker_root / "memory" / "daily"
+            if daily_dir.exists():
+                for p in daily_dir.glob("*.jsonl"):
+                    for line in p.read_text(encoding="utf-8").splitlines():
+                        if not line.strip():
+                            continue
+                        try:
+                            rec = json.loads(line)
+                            chunks.append({
+                                "path": str(p),
+                                "text": rec.get("text", ""),
+                                "ts": float(rec.get("ts", 0.0)),
+                            })
+                        except json.JSONDecodeError:
+                            continue
+
+        # Chat history
+        if source in ("all", "chat_history") and agent_name:
+            chat_path = self.ker_root / "agents" / agent_name / "chatHistory" / "chatHistory.jsonl"
+            if chat_path.exists():
+                for line in chat_path.read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        rec = json.loads(line)
+                        chunks.append({
+                            "path": str(chat_path),
+                            "text": rec.get("content", ""),
+                            "ts": float(rec.get("ts", 0.0)),
+                        })
+                    except json.JSONDecodeError:
+                        continue
+
+        # HISTORY.md (consolidated)
+        if source in ("all", "session"):
+            if self.history_path.exists():
+                text = self.history_path.read_text(encoding="utf-8")
+                for para in [p.strip() for p in text.split("\n\n") if p.strip()]:
+                    chunks.append({
+                        "path": "HISTORY.md",
+                        "text": para,
+                        "ts": self.history_path.stat().st_mtime,
+                    })
+
+        return chunks
 
     def add_daily(self, text: str) -> None:
         daily_dir = self.ker_root / "memory" / "daily"
@@ -55,19 +241,6 @@ class MemoryStore:
         with self.error_log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         log.error("%s: %s", source, message)
-
-    def read_error_log(self, limit: int = 50) -> list[dict]:
-        if not self.error_log_path.exists():
-            return []
-        rows = []
-        for line in self.error_log_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-        return rows[-max(1, limit) :]
 
     def search_memory(self, query: str, top_k: int = 5) -> list[MemoryHit]:
         chunks = self._load_chunks()

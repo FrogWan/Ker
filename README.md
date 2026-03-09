@@ -1,117 +1,286 @@
 # Ker
 
-Ker is a CLI-first, extensible agent runtime that implements a full agent stack: loop, tools, sessions, routing, intelligence, heartbeat/cron, delivery reliability, and lane-based concurrency.
+CLI-first, extensible agent runtime with a full agent stack: loop, tools, sessions, memory, multi-agent routing, cron/heartbeat, and multi-provider LLM support.
+
+![Ker running in KerWeb](screenshots/image.png)
 
 ## Features
 
-- Stable agent loop with tool-use chaining.
-- Tool registry and handlers: `exec`, `bash`, `read_file`, `write_file`, `edit_file`, `list_dir`, `skill`, `read_memory`, `read_error_log`, `web_search`, `web_fetch`, `cron`, `message`, `spawn`, `mcp` with background subagent support.
-- JSONL session persistence and context compaction.
-- Channel abstraction with CLI channel enabled by default, plus KerWeb bridge channel.
-- Binding-table routing and multi-agent configs.
-- Layered system prompt assembly from workspace bootstrap files.
-- Memory search and auto-recall.
-- Heartbeat runner and cron scheduler (off by default).
-- Write-ahead delivery queue with retries and backoff.
-- Named-lane concurrency with generation-based reset safety.
+- Async agent loop with tool-use chaining (max 120 iterations) and automatic context compaction.
+- 18 built-in tools: `exec`, `bash`, `read_file`, `write_file`, `edit_file`, `list_dir`, `skill`, `read_memory`, `write_memory`, `web_search`, `web_fetch`, `cron`, `message`, `spawn`, `capture_agent_conversation`, `self_evolve`, `long_task`, plus dynamic MCP tools.
+- JSONL session persistence with adaptive context compaction on overflow.
+- Channel abstraction: CLI, KerWeb WebSocket, KerWeb HTTP polling.
+- Multi-agent system: auto-discovered from `.ker/agents/`, per-agent model/token/tool overrides.
+- Layered system prompt: IDENTITY, SOUL, USER, TOOLS, AGENTS, BOOT templates (session-type aware).
+- Two-tier memory: long-term (MEMORY.md with dedup) and short-term search (daily logs, chat history, session).
+- Skills system: discoverable SKILL.md files with frontmatter, requirements, auto-load support.
+- Cron scheduler (every/cron/at) and heartbeat runner with smart execution.
+- Daily self-evolution cycle: reads errors + memory, conservatively edits agent config.
+- Long-running task orchestration via Claude CLI subprocess.
+- Subagent manager for background task spawning.
+- LLM providers: Anthropic (Claude), GitHub Copilot (OAuth + chat/completions + responses endpoints).
+- MCP integration for dynamic tool registration from external servers.
 
-## Architecture
+## Quick Start
 
-| Module | Purpose |
-|---|---|
-| `agent/` | Runtime, agent turn loop, provider integration, system prompt assembly, session key generation |
-| `channels/` | Channel abstraction, CLI channel, command dispatch |
-| `tools/` | Tool schemas, dispatch, domain handlers (exec/fs/memory/web/automation) |
-| `session/` | JSONL session persistence and context compaction guard |
-| `routing/` | Multi-agent configs and binding-table routing |
-| `memory/` | Daily memory logs, similarity search, bootstrap file loading, skills discovery |
-| `concurrency/` | Named-lane queues and generation-based reset safety |
-| `delivery/` | Write-ahead outbound queue, retries, background runner |
-| `scheduler/` | Heartbeat runner and cron service |
-
-## Runtime Behavior
-
-1. Resolve target agent and session key from inbound message context.
-2. Load session history and append current user message.
-3. Recall relevant memory snippets for prompt context.
-4. Build full system prompt from bootstrap files, active skills, and agent intro.
-5. Run the model/tool chain with context-overflow compaction and persist assistant output blocks.
-6. Persist daily memory and queue delivery messages with channel-aware chunking.
-7. Poll cron, heartbeat, and subagent outputs from the background loop.
-
-## Prerequisites
+### 1. Prerequisites
 
 - Python 3.11+
-- `uv` (recommended) or any compatible Python environment manager.
-- `ANTHROPIC_API_KEY` in environment or `.env`.
+- [`uv`](https://docs.astral.sh/uv/) (recommended) or any compatible Python environment manager.
 
-## Install
+### 2. Install Dependencies
 
 ```bash
 uv sync
 ```
 
-## Run
+### 3. Configure LLM Provider
+
+Create a `.env` file in the project root. Choose one of the providers below:
+
+#### GitHub Copilot (recommended)
+
+No API key needed — uses your GitHub account with Copilot subscription.
+
+```env
+LLM_PROVIDER=github_copilot
+MODEL_ID=gpt-5.3-codex
+```
+
+Then authenticate (one-time):
+
+```bash
+uv run ker github_copilot login
+```
+
+This runs the GitHub OAuth device flow — it prints a URL and code, you authorize in your browser, and the token is saved to `.ker/config.json`. If you skip this step, the device flow triggers automatically on the first API call.
+
+Available models: `gpt-4o`, `gpt-5.3-codex`, `claude-sonnet-4`, `o4-mini`, and any model supported by GitHub Copilot. Codex models use the `/responses` endpoint; all others use `/chat/completions`.
+
+#### Anthropic (Claude)
+
+```env
+LLM_PROVIDER=anthropic
+MODEL_ID=claude-opus-4-6
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Get your API key at [console.anthropic.com](https://console.anthropic.com/) → API Keys → Create Key.
+
+#### KerWeb (optional)
+
+Add this to `.env` if you want to connect Ker to the KerWeb frontend:
+
+```env
+KERWEB_API_KEY=...
+```
+
+Get the key at [kerweb-app.azurewebsites.net](https://kerweb-app.azurewebsites.net/) → Settings → copy the API Key.
+
+### 4. Start Ker
+
+**CLI mode** (interactive terminal, default):
 
 ```bash
 uv run ker
 ```
 
-### Start the Agent Gateway
-
-The gateway is the long-running process that connects channels, tools, and the agent loop.
+**Gateway mode** (all channels enabled, connects to KerWeb):
 
 ```bash
-# With uv
 uv run ker gateway
-
-# Without uv (using the project venv)
-.venv/Scripts/python -c "import sys; sys.argv=['ker','gateway']; from ker.main import main; main()"
-
-# Or directly via the entry point
-python -m ker.main gateway
 ```
 
-To run in the background (Windows):
+Gateway mode auto-connects to KerWeb via WebSocket (falls back to HTTP polling) and enables cron, heartbeat, and all background services.
+
+Type `/help` once running to see available commands.
+
+## Start Commands
+
+| Command | Description |
+|---|---|
+| `uv run ker` | CLI mode (stdin/stdout, default) |
+| `uv run ker cli` | Explicit CLI mode |
+| `uv run ker gateway` | Full gateway with all channels (KerWeb, cron, heartbeat) |
+| `uv run ker github_copilot login` | GitHub Copilot OAuth login |
+
+Without `uv`:
+
+```bash
+python -m ker.main             # CLI mode
+python -m ker.main gateway     # Gateway mode
+```
+
+Background (Windows PowerShell):
 
 ```powershell
-Start-Process -NoNewWindow -FilePath .venv\Scripts\python.exe -ArgumentList '-c', "import sys; sys.argv=['ker','gateway']; from ker.main import main; main()"
+Start-Process -NoNewWindow -FilePath .venv\Scripts\python.exe `
+  -ArgumentList '-m', 'ker.main', 'gateway'
 ```
 
-## Environment
+## Configuration
 
-- `ANTHROPIC_API_KEY` (required for model calls)
-- `MODEL_ID` (default: `claude-sonnet-4-20250514`)
-- `MAX_TOKENS` (default: `8096`)
-- `DELIVERY_ENABLED=1` to auto-run delivery background runner
-- `HEARTBEAT_ENABLED=1` to auto-run heartbeat
-- `CRON_ENABLED=1` to auto-run cron scheduler
-- `KERWEB_ENABLED=1` to enable KerWeb channel polling
-- `KERWEB_BASE_URL` KerWeb base URL (default: `http://127.0.0.1:3000`)
-- `KERWEB_API_KEY` KerWeb registered user API key
-- `KERWEB_POLL_INTERVAL_SEC` KerWeb poll interval in seconds (default: `1.0`)
+Settings are loaded from: `.ker/config.json` → `.env` → defaults.
 
-Runtime state is stored in project-local `.ker/`.
+| Variable | Default | Description |
+|---|---|---|
+| `LLM_PROVIDER` | `anthropic` | LLM provider: `anthropic`, `azure`, `github_copilot` |
+| `MODEL_ID` | `claude-opus-4-6` | Model identifier |
+| `ANTHROPIC_API_KEY` | *(empty)* | Anthropic API key |
+| `GITHUB_COPILOT_TOKEN` | *(empty)* | GitHub Copilot access token (optional, skips OAuth) |
+| `MAX_TOKENS` | `8096` | Max output tokens per LLM call |
+| `KERWEB_ENABLED` | `1` | Enable KerWeb channel |
+| `KERWEB_API_KEY` | *(empty)* | KerWeb API key |
+| `KERWEB_BASE_URL` | `https://kerweb-app.azurewebsites.net` | KerWeb backend URL |
+| `KERWEB_POLL_INTERVAL_SEC` | `1.0` | HTTP polling interval (seconds) |
+| `HEARTBEAT_ENABLED` | `1` | Enable heartbeat runner |
+| `CRON_ENABLED` | `1` | Enable cron scheduler |
+| `DELIVERY_ENABLED` | `0` | Enable write-ahead delivery queue |
+| `AZURE_OPENAI_KEY` | *(empty)* | Azure OpenAI API key |
+| `AZURE_OPENAI_ENDPOINT` | *(empty)* | Azure OpenAI endpoint URL |
+| `LOG_RETENTION_DAYS` | `30` | Days to retain log files |
+| `MEMORY_CONSOLIDATION_WINDOW` | `50` | Memory consolidation window |
 
-Bootstrap defaults ship with Ker and load automatically.
+### Per-Agent Configuration
 
-Optional bootstrap overrides are read from `.ker/templates/` (for example: `IDENTITY.md`, `SOUL.md`, `TOOLS.md`, `AGENTS.md`). Ker does not create these files on every run.
+Each agent can override settings via `.ker/agents/{name}/config.json`:
 
-## Reliability and Scheduling
+```json
+{
+  "enabled": true,
+  "model_id": "claude-opus-4-6",
+  "max_tokens": 8096,
+  "tools": ["read_file", "write_file", "exec"],
+  "skills": ["claude", "github"]
+}
+```
 
-- Delivery retries use backoff schedule `5s -> 25s -> 120s -> 600s` with max 5 retries.
-- Heartbeat and cron services can be enabled independently by environment flags.
+### MCP Servers
+
+External MCP servers can be configured in `.ker/config.json`:
+
+```json
+{
+  "mcp_servers": {
+    "my-server": {
+      "command": "npx",
+      "args": ["-y", "my-mcp-server"],
+      "env": {}
+    }
+  }
+}
+```
+
+MCP tools are registered dynamically at startup with names prefixed `mcp_{server}_{tool}`.
+
+## Tools
+
+| Tool | Description |
+|---|---|
+| `exec` | Execute a shell command with safety guard (blocks `rm -rf`, `shutdown`, etc.) |
+| `bash` | Alias for `exec` with shorter default timeout |
+| `read_file` | Read file contents from workspace |
+| `write_file` | Write/create a file under workspace |
+| `edit_file` | Replace exact substring in a file |
+| `list_dir` | List directory contents |
+| `skill` | Manage skills: `list`, `show`, `read`, `install` |
+| `read_memory` | Search short-term memory (daily logs, chat history, session) |
+| `write_memory` | Save/remove facts in long-term memory (MEMORY.md) |
+| `web_search` | Search the web via Brave API |
+| `web_fetch` | Fetch URL and extract readable content (HTML → Markdown) |
+| `cron` | Manage scheduled jobs: `add`, `list`, `remove` |
+| `message` | Send a direct message to a channel peer |
+| `spawn` | Spawn a background subagent task |
+| `capture_agent_conversation` | Watch and record an external agent session (Claude/Codex) |
+| `self_evolve` | Self-evolution: `status`, `history`, `trigger`, `config` |
+| `long_task` | Run a long-running task via Claude CLI: `start`, `status`, `cancel`, `list` |
+
+## Architecture
+
+```
+Gateway
+├── Channels (CLI, KerWeb WS, KerWeb HTTP)
+├── Agent Loop (model + tool chaining, max 120 iterations)
+├── Tool Registry (18 built-in + dynamic MCP tools)
+├── Session Store (JSONL persistence per agent/session)
+├── Context Guard (overflow detection, compaction, truncation)
+├── Memory Store (long-term MEMORY.md + short-term daily/chat/session)
+├── Prompt Builder (layered bootstrap: IDENTITY → SOUL → USER → TOOLS → AGENTS → BOOT)
+├── Skills Manager (discoverable SKILL.md files with frontmatter)
+├── Cron Scheduler (every/cron/at schedules, croniter-based)
+├── Heartbeat Runner (periodic tasks from HEARTBEAT.md)
+├── Subagent Manager (background task spawning)
+└── LLM Provider (Anthropic / GitHub Copilot)
+```
+
+| Module | Purpose |
+|---|---|
+| `agent/` | Agent loop, config, context management (memory, session, prompt, skills, context guard) |
+| `channels/` | Channel abstraction: CLI, KerWeb WebSocket, KerWeb HTTP polling |
+| `gateway/` | Central orchestrator, command dispatch, agent discovery, background services |
+| `tools/` | Tool schemas, registry, dispatch, handlers |
+| `llm/` | LLM provider abstraction and factory |
+| `scheduler/` | Cron service and heartbeat runner |
+| `memory/` | Bootstrap templates (IDENTITY, SOUL, USER, TOOLS, AGENTS, BOOT) |
+| `skills/` | Built-in skill definitions |
+
+## Runtime State
+
+All runtime state is stored in project-local `.ker/`:
+
+```
+.ker/
+├── config.json                # Settings overrides + GitHub Copilot token
+├── MEMORY.md                  # Long-term memory (facts by category)
+├── agents/
+│   └── {name}/
+│       ├── AGENT.md           # Agent identity/instructions
+│       ├── IDENTITY.md        # Personality override (optional)
+│       ├── config.json        # Per-agent settings
+│       ├── session/           # Session JSONL files
+│       │   └── {channel}_{user}_{session}.jsonl
+│       ├── chatHistory/
+│       │   └── chatHistory.jsonl
+│       └── skills/            # Agent-specific skills
+│           └── {name}/SKILL.md
+├── memory/
+│   ├── daily/                 # Daily logs ({YYYY-MM-DD}.jsonl)
+│   ├── evolution/             # Self-evolution config + log
+│   └── ERROR_LOG.jsonl        # Runtime errors with context
+├── cron/
+│   └── jobs.json              # Scheduled jobs
+├── templates/
+│   └── HEARTBEAT.md           # Periodic task list
+├── cache/
+│   └── github_copilot/        # Short-lived API key cache
+├── media/                     # Uploaded images
+└── logs/                      # Daily log files ({YYYY-MM-DD}.log)
+```
+
+Bootstrap templates ship with Ker and load automatically. Override by placing files in `.ker/agents/{name}/` or `.ker/templates/`.
 
 ## CLI Commands
 
-- Core: `/help`, `/exit`
-- Sessions/context: `/sessions`, `/new <name>`, `/switch <name>`, `/context`, `/compact`
-- Prompt/memory: `/prompt`, `/bootstrap`, `/search <query>`, `/skills`
-- Memory+errors via tools: `read_memory`, `read_error_log`
-- Routing/agents: `/agents`, `/bindings`, `/route <channel> <peer>`, `/switch-agent <id|off>`
-- Heartbeat/cron: `/heartbeat`, `/trigger`, `/cron`, `/cron-run <job_id>`
-- Delivery: `/queue`, `/failed`, `/stats`
-- Concurrency: `/lanes`, `/enqueue <lane> <text>`, `/concurrency <lane> <n>`, `/generation`, `/reset`
+| Command | Description |
+|---|---|
+| `/help` | Show available commands |
+| `/exit` | Terminate Ker |
+| `/agents` | List discovered agents |
+| `/switch-agent <name\|off>` | Override agent routing |
+| `/sessions` | Show current session |
+| `/new <name>` | Create and switch to a new session |
+| `/switch <name>` | Switch to an existing session |
+| `/rename <name>` | Rename the current session |
+| `/context` | Show estimated context token usage |
+| `/compact` | Compact session history |
+| `/prompt` | Show the full system prompt |
+| `/skills` | Show skills summary |
+| `/search <query>` | Search memory |
+| `/heartbeat` | Show heartbeat status |
+| `/trigger` | Queue manual heartbeat execution |
+| `/cron` | List all cron jobs |
+| `/cron-run <job_id>` | Execute a cron job immediately |
+
 ## Tests
 
 ```bash
@@ -126,6 +295,4 @@ python -m pytest -q
 
 ## Extending Channels
 
-Implement `ker.channels.base.Channel` and register it in runtime setup. The agent core consumes normalized `InboundMessage`, so new channels do not require loop changes.
-
-
+Implement `ker.channels.base.AsyncChannel` and register it in runtime setup. The agent core consumes normalized `InboundMessage`, so new channels do not require loop changes.

@@ -125,7 +125,7 @@ class AgentLoop:
         session_type = self._infer_session_type(inbound)
 
         # Build system prompt
-        memory_context = self._auto_recall(inbound.text)
+        memory_context = self._auto_recall(inbound.text, agent_name)
         always_names = self.skills_manager.get_always_skills(agent_name=agent_name)
         active = [s for s in self.skills_manager.discover(filter_unavailable=True, agent_name=agent_name) if s.name in always_names]
         summary_xml = self.skills_manager.render_skills_summary_xml(agent_name=agent_name)
@@ -146,16 +146,27 @@ class AgentLoop:
             if thinking_callback:
                 thinking_callback("Preparing context and system prompt")
 
+            original_count = len(messages)
             response, updated_messages = await self._run_model_loop(
                 system_prompt, messages, tool_schemas, thinking_callback,
                 model_id=model_id, max_tokens=max_tokens,
             )
             text = self._extract_text(response)
 
-            # Store assistant response in session
-            last_assistant = updated_messages[-1]["content"] if updated_messages else []
-            if isinstance(last_assistant, list):
-                self.session_store.append_assistant(agent_name, session_id, last_assistant)
+            # Store ALL new messages from the model loop (intermediate
+            # tool_use/tool_result exchanges + final assistant response)
+            for new_msg in updated_messages[original_count:]:
+                role = new_msg["role"]
+                content = new_msg["content"]
+                if role == "assistant" and isinstance(content, list):
+                    self.session_store.append_assistant(agent_name, session_id, content)
+                elif role == "user" and isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_result":
+                            self.session_store.append_tool_result(
+                                agent_name, session_id,
+                                block["tool_use_id"], block["content"],
+                            )
 
             # Append to chat history (user + assistant text only)
             self.chat_history.append(agent_name, "user", inbound.text)
@@ -237,8 +248,8 @@ class AgentLoop:
     def _extract_text(self, response: ProviderResponse) -> str:
         return "".join([b.text for b in response.content if b.type == "text"]).strip()
 
-    def _auto_recall(self, user_message: str) -> str:
-        hits = self.memory_store.search_memory(user_message, top_k=3)
+    def _auto_recall(self, user_message: str, agent_name: str = "") -> str:
+        hits = self.memory_store.search_short_term(user_message, agent_name=agent_name, top_k=3)
         if not hits:
             return ""
         lines = [f"- [{h.path}] {h.snippet}" for h in hits]

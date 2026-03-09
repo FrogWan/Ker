@@ -8,7 +8,7 @@ You are running a daily self-evolution cycle. Your goal: find ONE small improvem
 
 Use tools to collect data:
 
-- `read_error_log` (limit=50) — recent runtime errors
+- `read_file` on `.ker/memory/ERROR_LOG.jsonl` — recent runtime errors
 - `read_file` on recent daily memory files in `.ker/memory/daily/`
 - `read_file` on `.ker/agents/ker/AGENT.md` — current behavioral guidelines
 - `read_file` on `.ker/agents/ker/MEMORY.md` (if it exists) — persistent memory

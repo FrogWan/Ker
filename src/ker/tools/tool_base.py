@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -8,8 +9,8 @@ if TYPE_CHECKING:
     from ker.agent.context.memory import MemoryStore
     from ker.agent.context.skills import SkillsManager
     from ker.agent.subagent import SubagentManager
-    from ker.longtask.orchestrator import LongTaskOrchestrator
     from ker.scheduler.cron import CronService
+    from ker.types import OutboundMessage
 
 
 @dataclass
@@ -20,7 +21,7 @@ class ToolContext:
     memory_store: MemoryStore | None = None
     subagent_manager: SubagentManager | None = None
     skills_manager: SkillsManager | None = None
-    longtask_orchestrator: LongTaskOrchestrator | None = None
+    outbound_queue: asyncio.Queue[OutboundMessage] | None = None
     agent_name: str = "ker"
     session_name: str = "default"
     current_channel: str = "cli"

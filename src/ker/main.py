@@ -72,6 +72,7 @@ def _run_gateway() -> None:
             gateway.register_channel(KerWebWSChannel(
                 ws_url=ws_url,
                 api_key=settings.kerweb_api_key,
+                ker_root=settings.ker_root,
             ))
         except ImportError:
             from ker.channels.kerweb import KerWebPollingChannel, KerWebConfig

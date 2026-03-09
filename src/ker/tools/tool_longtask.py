@@ -2,243 +2,512 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
+import os
+import platform
+import shutil
+import signal
+import subprocess
+import threading
+import time
+from datetime import datetime, timezone
+from pathlib import Path
 
+from ker.logger import get_logger
 from ker.tools.tool_base import ToolContext
+
+log = get_logger("longtask")
+
+LONG_TASK_DIR = "longTask"
 
 
 def long_task(
     ctx: ToolContext,
     action: str,
-    description: str = "",
-    task_id: str = "",
-    subtasks: list[dict[str, Any]] | None = None,
-    max_workers: int = 3,
-    task_prompt: str = "",
-    worker_agent: str = "claude",
+    task_name: str | None = None,
+    workspace: str | None = None,
+    description: str | None = None,
+    max_iterations: int = 3,
 ) -> str:
-    if ctx.longtask_orchestrator is None:
-        return "Error: LongTask orchestrator not configured"
-
-    orchestrator = ctx.longtask_orchestrator
-    task_board = orchestrator.task_board
-
-    if action == "plan":
-        return _plan(ctx, description)
-
-    elif action == "start":
-        return _start(ctx, description, subtasks, max_workers, task_prompt, worker_agent)
-
+    if action == "start":
+        return _start(ctx, task_name, workspace, description, max_iterations)
     elif action == "status":
-        return _status(ctx, task_id)
-
+        return _status(ctx, task_name)
     elif action == "cancel":
-        return _cancel(ctx, task_id)
+        return _cancel(ctx, task_name)
+    elif action == "list":
+        return _list(ctx)
+    else:
+        return f"Unknown action '{action}'. Use: start, status, cancel, list."
 
-    elif action == "result":
-        return _result(ctx, task_id)
 
-    return f"Error: Unknown action '{action}'. Use: plan, start, status, cancel, result"
-
-
-def _plan(ctx: ToolContext, description: str) -> str:
-    if not description:
-        return "Error: description is required for plan action"
-    return (
-        "To proceed, propose a subtask decomposition and call long_task with action='start'.\n\n"
-        "Example subtasks format:\n"
-        + json.dumps([
-            {"subject": "Task 1 title", "description": "Detailed instructions...", "blocked_by": []},
-            {"subject": "Task 2 title", "description": "Detailed instructions...", "blocked_by": ["sub_001"]},
-        ], indent=2)
-        + "\n\nInclude a task_prompt with shared context all workers should know."
-    )
-
+# ---------------------------------------------------------------------------
+# Actions
+# ---------------------------------------------------------------------------
 
 def _start(
     ctx: ToolContext,
-    description: str,
-    subtasks: list[dict[str, Any]] | None,
-    max_workers: int,
-    task_prompt: str,
-    worker_agent: str,
+    task_name: str | None,
+    workspace: str | None,
+    description: str | None,
+    max_iterations: int,
 ) -> str:
-    if not subtasks:
-        return "Error: subtasks array is required for start action"
+    if not task_name:
+        return "Error: task_name is required for start."
+    if not workspace:
+        return "Error: workspace is required for start."
     if not description:
-        return "Error: description is required for start action"
+        return "Error: description is required for start."
 
-    orchestrator = ctx.longtask_orchestrator
-    task_board = orchestrator.task_board
+    if not shutil.which("claude"):
+        return "Error: 'claude' CLI not found on PATH. Install Claude Code first."
 
-    # Validate blocked_by references
-    sub_ids = [f"sub_{i+1:03d}" for i in range(len(subtasks))]
-    for i, st in enumerate(subtasks):
-        for dep in st.get("blocked_by", []):
-            if dep not in sub_ids:
-                return f"Error: subtask {i+1} references unknown blocker '{dep}'. Valid IDs: {sub_ids}"
+    workspace_path = Path(workspace)
+    if not workspace_path.is_dir():
+        return f"Error: workspace '{workspace}' does not exist or is not a directory."
 
-    # Check for circular dependencies
-    cycle = _detect_cycle(subtasks, sub_ids)
-    if cycle:
-        return f"Error: Circular dependency detected: {' -> '.join(cycle)}"
+    task_dir = ctx.ker_root / LONG_TASK_DIR / task_name
+    status_path = task_dir / "status.json"
+    if status_path.exists():
+        existing = _read_status(status_path)
+        if existing and existing.get("status") in ("implementing", "reviewing", "initializing"):
+            return f"Error: task '{task_name}' is already running. Use status or cancel."
 
-    # Create task
-    title = description[:60]
-    task = task_board.create_task(
-        title=title,
-        description=description,
-        max_workers=max_workers,
-        worker_agent=worker_agent,
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write task definition
+    (task_dir / "task.md").write_text(description, encoding="utf-8")
+
+    # Init status
+    now = datetime.now(timezone.utc).isoformat()
+    status = {
+        "task_name": task_name,
+        "workspace": str(workspace_path),
+        "status": "initializing",
+        "iteration": 0,
+        "max_iterations": max_iterations,
+        "started_at": now,
+        "updated_at": now,
+        "cancelled": False,
+        "current_agent": None,
+        "pid": None,
+        "history": [],
+        "result": None,
+        "error": None,
+    }
+    _write_status(status_path, status)
+
+    # Launch daemon thread
+    t = threading.Thread(
+        target=_task_runner,
+        args=(ctx, task_name, task_dir, workspace_path, max_iterations),
+        daemon=True,
+        name=f"longtask-{task_name}",
     )
-
-    # Add subtasks
-    for st_data in subtasks:
-        task_board.add_subtask(
-            task_id=task.id,
-            subject=st_data["subject"],
-            description=st_data.get("description", ""),
-            blocked_by=st_data.get("blocked_by", []),
-        )
-
-    # Write shared task prompt
-    if task_prompt:
-        task_board.write_task_prompt(task.id, task_prompt)
-
-    # Start orchestrator (async)
-    loop = asyncio.get_event_loop()
-    asyncio.run_coroutine_threadsafe(orchestrator.start_task(task.id), loop)
+    t.start()
 
     return (
-        f"LongTask '{task.title}' created (id: {task.id}) with {len(subtasks)} subtasks.\n"
-        f"Worker agent: {worker_agent}, max workers: {max_workers}\n"
-        f"Orchestrator started. Use long_task(action='status', task_id='{task.id}') to check progress."
+        f"Long task '{task_name}' started.\n"
+        f"Workspace: {workspace_path}\n"
+        f"Max iterations: {max_iterations}\n"
+        f"Use long_task(action='status', task_name='{task_name}') to check progress."
     )
 
 
-def _status(ctx: ToolContext, task_id: str) -> str:
-    orchestrator = ctx.longtask_orchestrator
-    task_board = orchestrator.task_board
+def _status(ctx: ToolContext, task_name: str | None) -> str:
+    if not task_name:
+        return "Error: task_name is required for status."
 
-    if not task_id:
-        # List all tasks
-        tasks = task_board.list_tasks()
-        if not tasks:
-            return "No long tasks found."
-        lines = ["Long Tasks:"]
-        for t in tasks:
-            done = sum(1 for s in t.subtasks if s.status == "done")
-            total = len(t.subtasks)
-            active = "active" if orchestrator.is_task_active(t.id) else "idle"
-            bar = _progress_bar(done, total)
-            lines.append(f"  {t.id}  {t.status:<10} {bar} {done}/{total}  [{active}]  {t.title}")
-        return "\n".join(lines)
-
-    # Detailed status
-    loop = asyncio.get_event_loop()
-    future = asyncio.run_coroutine_threadsafe(orchestrator.get_status(task_id), loop)
-    status = future.result(timeout=5)
-
-    if "error" in status:
-        return status["error"]
-
-    done = sum(1 for st in status["subtasks"] if st["status"] == "done")
-    total = len(status["subtasks"])
-    bar = _progress_bar(done, total)
+    status_path = ctx.ker_root / LONG_TASK_DIR / task_name / "status.json"
+    status = _read_status(status_path)
+    if status is None:
+        return f"Error: no task '{task_name}' found."
 
     lines = [
-        f"Task: {status['title']} ({status['id']})",
-        f"Status: {status['status']}  Supervisor: {status.get('supervisor', 'n/a')}",
-        f"Progress: {bar} {done}/{total}  Active workers: {status['active_workers']}/{status['max_workers']}",
-        f"Agent: {status['worker_agent']}",
+        f"Task: {status['task_name']}",
+        f"Status: {status['status']}",
+        f"Iteration: {status['iteration']}/{status['max_iterations']}",
+        f"Current agent: {status.get('current_agent') or 'none'}",
+        f"Started: {status['started_at']}",
+        f"Updated: {status['updated_at']}",
     ]
-    if status.get("last_milestone"):
-        lines.append(f"Last milestone: {status['last_milestone']}")
-    lines.append("")
-    lines.append("Subtasks:")
-    for st in status["subtasks"]:
-        blocked = f" blocked_by={st['blocked_by']}" if st["blocked_by"] else ""
-        owner = f" [{st['owner']}]" if st["owner"] else ""
-        lines.append(f"  {st['id']}  {st['status']:<8}{owner}{blocked}  {st['subject']}")
+
+    if status.get("result"):
+        lines.append(f"Result: {status['result']}")
+    if status.get("error"):
+        lines.append(f"Error: {status['error']}")
+
+    history = status.get("history", [])
+    if history:
+        lines.append(f"\nHistory ({len(history)} entries):")
+        for entry in history[-6:]:
+            agent = entry.get("agent", "?")
+            iteration = entry.get("iteration", "?")
+            exit_code = entry.get("exit_code")
+            verdict = entry.get("verdict")
+            detail = f"exit={exit_code}" if exit_code is not None else f"verdict={verdict}"
+            feedback = entry.get("feedback", "")
+            line = f"  iter {iteration} [{agent}] {detail}"
+            if feedback:
+                line += f" - {feedback[:120]}"
+            lines.append(line)
 
     return "\n".join(lines)
 
 
-def _progress_bar(done: int, total: int, width: int = 10) -> str:
-    if total == 0:
-        return "[" + "." * width + "]"
-    filled = round(done / total * width)
-    return "[" + "#" * filled + "." * (width - filled) + "]"
+def _cancel(ctx: ToolContext, task_name: str | None) -> str:
+    if not task_name:
+        return "Error: task_name is required for cancel."
+
+    status_path = ctx.ker_root / LONG_TASK_DIR / task_name / "status.json"
+    status = _read_status(status_path)
+    if status is None:
+        return f"Error: no task '{task_name}' found."
+
+    if status["status"] in ("complete", "failed", "cancelled"):
+        return f"Task '{task_name}' already {status['status']}."
+
+    status["cancelled"] = True
+    status["status"] = "cancelled"
+    status["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _write_status(status_path, status)
+
+    pid = status.get("pid")
+    if pid:
+        _kill_process_tree(pid)
+
+    return f"Task '{task_name}' cancelled."
 
 
-def _cancel(ctx: ToolContext, task_id: str) -> str:
-    if not task_id:
-        return "Error: task_id is required for cancel action"
+def _list(ctx: ToolContext) -> str:
+    base = ctx.ker_root / LONG_TASK_DIR
+    if not base.exists():
+        return "No long tasks found."
 
-    orchestrator = ctx.longtask_orchestrator
-    loop = asyncio.get_event_loop()
-    asyncio.run_coroutine_threadsafe(orchestrator.cancel_task(task_id), loop)
-    return f"Task {task_id} cancellation initiated."
+    rows = []
+    for d in sorted(base.iterdir()):
+        if not d.is_dir():
+            continue
+        sp = d / "status.json"
+        status = _read_status(sp)
+        if status is None:
+            continue
+        name = status.get("task_name", d.name)
+        st = status.get("status", "?")
+        iteration = status.get("iteration", 0)
+        max_iter = status.get("max_iterations", "?")
+        rows.append(f"  {name:30s} {st:15s} iter {iteration}/{max_iter}")
 
+    if not rows:
+        return "No long tasks found."
 
-def _result(ctx: ToolContext, task_id: str) -> str:
-    if not task_id:
-        return "Error: task_id is required for result action"
-
-    orchestrator = ctx.longtask_orchestrator
-    task_board = orchestrator.task_board
-
-    task = task_board.get_task(task_id)
-    if task is None:
-        return f"Error: Task {task_id} not found"
-
-    if task.status != "done":
-        return f"Task {task_id} is not done yet (status: {task.status})"
-
-    synthesis_path = task_board._task_dir(task_id) / "SYNTHESIS.md"
-    if synthesis_path.exists():
-        return synthesis_path.read_text(encoding="utf-8")
-
-    # Fall back to individual results
-    parts = []
-    for st in task.subtasks:
-        parts.append(f"## {st.subject} [{st.status}]")
-        if st.result:
-            parts.append(st.result)
-        parts.append("")
-    return "\n".join(parts) if parts else "No results available."
+    return "Long tasks:\n" + "\n".join(rows)
 
 
-def _detect_cycle(subtasks: list[dict], sub_ids: list[str]) -> list[str] | None:
-    """Detect circular dependencies in subtask graph."""
-    # Build adjacency: id -> blocked_by
-    graph: dict[str, list[str]] = {}
-    for i, st in enumerate(subtasks):
-        graph[sub_ids[i]] = st.get("blocked_by", [])
+# ---------------------------------------------------------------------------
+# Background runner
+# ---------------------------------------------------------------------------
 
-    visited: set[str] = set()
-    in_stack: set[str] = set()
-    path: list[str] = []
+def _task_runner(
+    ctx: ToolContext,
+    task_name: str,
+    task_dir: Path,
+    workspace_path: Path,
+    max_iterations: int,
+) -> None:
+    status_path = task_dir / "status.json"
+    task_md = (task_dir / "task.md").read_text(encoding="utf-8")
+    feedback = ""
 
-    def dfs(node: str) -> list[str] | None:
-        visited.add(node)
-        in_stack.add(node)
-        path.append(node)
-        for dep in graph.get(node, []):
-            if dep in in_stack:
-                cycle_start = path.index(dep)
-                return path[cycle_start:] + [dep]
-            if dep not in visited:
-                result = dfs(dep)
-                if result:
-                    return result
-        path.pop()
-        in_stack.discard(node)
+    try:
+        for iteration in range(1, max_iterations + 1):
+            status = _read_status(status_path)
+            if status and status.get("cancelled"):
+                log.info("Task %s cancelled before iteration %d", task_name, iteration)
+                return
+
+            # --- WORKER PHASE ---
+            _update_status(status_path, {
+                "status": "implementing",
+                "iteration": iteration,
+                "current_agent": "worker",
+            })
+
+            worker_prompt = _build_worker_prompt(task_md, workspace_path, iteration, feedback)
+            worker_log = task_dir / f"worker_iter{iteration}.log"
+            exit_code = _run_claude(worker_prompt, workspace_path, worker_log, status_path)
+
+            _append_history(status_path, {
+                "iteration": iteration,
+                "agent": "worker",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "exit_code": exit_code,
+            })
+
+            if exit_code != 0:
+                _update_status(status_path, {
+                    "status": "failed",
+                    "error": f"Worker exited with code {exit_code} on iteration {iteration}",
+                    "current_agent": None,
+                    "pid": None,
+                })
+                _notify(ctx, f"Long task '{task_name}' failed: worker exit code {exit_code} (iteration {iteration})")
+                return
+
+            # Check cancellation again
+            status = _read_status(status_path)
+            if status and status.get("cancelled"):
+                return
+
+            # --- REVIEW PHASE ---
+            _update_status(status_path, {
+                "status": "reviewing",
+                "current_agent": "reviewer",
+            })
+
+            review_prompt = _build_review_prompt(task_md, workspace_path)
+            reviewer_log = task_dir / f"reviewer_iter{iteration}.log"
+            review_exit = _run_claude(review_prompt, workspace_path, reviewer_log, status_path)
+
+            verdict, review_feedback = _parse_reviewer_log(reviewer_log)
+
+            _append_history(status_path, {
+                "iteration": iteration,
+                "agent": "reviewer",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "exit_code": review_exit,
+                "verdict": verdict,
+                "feedback": review_feedback[:500] if review_feedback else "",
+            })
+
+            if verdict == "PASS":
+                _update_status(status_path, {
+                    "status": "complete",
+                    "result": f"Completed in {iteration} iteration(s)",
+                    "current_agent": None,
+                    "pid": None,
+                })
+                _notify(ctx, f"Long task '{task_name}' completed successfully after {iteration} iteration(s).")
+                return
+
+            # Feed review feedback into next iteration
+            feedback = review_feedback or "Reviewer found issues but gave no specific feedback."
+            log.info("Task %s iteration %d: reviewer verdict=%s, looping", task_name, iteration, verdict)
+
+        # Exhausted max iterations
+        _update_status(status_path, {
+            "status": "failed",
+            "error": f"Exhausted {max_iterations} iterations without passing review",
+            "current_agent": None,
+            "pid": None,
+        })
+        _notify(ctx, f"Long task '{task_name}' failed: exhausted {max_iterations} iterations.")
+
+    except Exception as exc:
+        log.error("Task %s runner crashed: %s", task_name, exc)
+        try:
+            _update_status(status_path, {
+                "status": "failed",
+                "error": str(exc),
+                "current_agent": None,
+                "pid": None,
+            })
+        except Exception:
+            pass
+        _notify(ctx, f"Long task '{task_name}' crashed: {exc}")
+
+
+def _run_claude(prompt: str, workspace: Path, log_file: Path, status_path: Path) -> int:
+    cmd = [
+        "claude",
+        "--dangerously-skip-permissions",
+        "-p", prompt,
+    ]
+
+    env = os.environ.copy()
+    env.pop("CLAUDECODE", None)  # Allow nested Claude Code sessions
+
+    with open(log_file, "w", encoding="utf-8") as f:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(workspace),
+            stdout=f,
+            stderr=subprocess.STDOUT,
+            env=env,
+        )
+
+    # Store PID for cancel support
+    _update_status(status_path, {"pid": proc.pid})
+
+    proc.wait()
+    return proc.returncode
+
+
+# ---------------------------------------------------------------------------
+# Prompts
+# ---------------------------------------------------------------------------
+
+def _build_worker_prompt(task_md: str, workspace: Path, iteration: int, feedback: str) -> str:
+    parts = [
+        "You are a worker agent executing a coding task.",
+        "IMPORTANT: Write code ONLY within the workspace directory.",
+        "",
+        "## Task",
+        task_md,
+        "",
+        "## Workspace",
+        str(workspace),
+        "",
+        "## Instructions",
+        "- Implement the task fully and thoroughly.",
+        "- Use sub-agents (Agent tool) for parallel work when the task has independent parts.",
+        "- Run tests if applicable.",
+        "- Be thorough — an automated reviewer will check your work next.",
+    ]
+
+    if iteration > 1 and feedback:
+        parts.extend([
+            "",
+            f"## Previous Review Feedback (Iteration {iteration - 1})",
+            "The reviewer found these issues that MUST be fixed:",
+            feedback,
+        ])
+
+    return "\n".join(parts)
+
+
+def _build_review_prompt(task_md: str, workspace: Path) -> str:
+    return "\n".join([
+        "You are a review agent evaluating whether a coding task is FULLY completed.",
+        "",
+        "## Task Definition",
+        task_md,
+        "",
+        "## Workspace",
+        str(workspace),
+        "",
+        "## Instructions",
+        "1. Read the task definition carefully.",
+        "2. Examine ALL implementation files in the workspace.",
+        "3. Run tests, build commands, or verification steps mentioned in the task.",
+        "4. Determine if the task is FULLY complete.",
+        "",
+        "## Output Format",
+        "Write your verdict as the LAST line of output:",
+        "- If complete: VERDICT: PASS",
+        "- If incomplete: VERDICT: FAIL",
+        "Then explain what is missing or wrong in detail.",
+    ])
+
+
+# ---------------------------------------------------------------------------
+# Reviewer parsing
+# ---------------------------------------------------------------------------
+
+def _parse_reviewer_log(log_file: Path) -> tuple[str, str]:
+    """Parse reviewer log for VERDICT line. Returns (verdict, feedback)."""
+    if not log_file.exists():
+        return "FAIL", "Reviewer log not found."
+
+    try:
+        text = log_file.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return "FAIL", "Could not read reviewer log."
+
+    lines = text.strip().splitlines()
+
+    # Search from bottom for VERDICT line
+    for line in reversed(lines):
+        stripped = line.strip().upper()
+        if "VERDICT: PASS" in stripped:
+            # Collect everything after the verdict line as feedback
+            idx = next(
+                (i for i, l in enumerate(lines) if "VERDICT:" in l.upper()),
+                len(lines),
+            )
+            feedback = "\n".join(lines[idx + 1:]).strip()
+            return "PASS", feedback
+        if "VERDICT: FAIL" in stripped:
+            idx = next(
+                (i for i, l in enumerate(lines) if "VERDICT:" in l.upper()),
+                len(lines),
+            )
+            feedback = "\n".join(lines[idx + 1:]).strip()
+            if not feedback:
+                # Take everything before the verdict as feedback
+                feedback = "\n".join(lines[:idx]).strip()[-2000:]
+            return "FAIL", feedback
+
+    # No verdict found — treat as fail
+    return "FAIL", text[-2000:] if text else "No output from reviewer."
+
+
+# ---------------------------------------------------------------------------
+# Status helpers
+# ---------------------------------------------------------------------------
+
+def _read_status(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
         return None
 
-    for node in sub_ids:
-        if node not in visited:
-            result = dfs(node)
-            if result:
-                return result
-    return None
+
+def _write_status(path: Path, data: dict) -> None:
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _update_status(path: Path, updates: dict) -> None:
+    status = _read_status(path) or {}
+    status.update(updates)
+    status["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _write_status(path, status)
+
+
+def _append_history(path: Path, entry: dict) -> None:
+    status = _read_status(path) or {}
+    history = status.get("history", [])
+    history.append(entry)
+    status["history"] = history
+    status["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _write_status(path, status)
+
+
+# ---------------------------------------------------------------------------
+# Process management
+# ---------------------------------------------------------------------------
+
+def _kill_process_tree(pid: int) -> None:
+    try:
+        if platform.system() == "Windows":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True,
+                timeout=10,
+            )
+        else:
+            os.kill(pid, signal.SIGTERM)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Notification
+# ---------------------------------------------------------------------------
+
+def _notify(ctx: ToolContext, text: str) -> None:
+    log.info("Notification: %s", text)
+    if ctx.outbound_queue is None:
+        return
+    try:
+        from ker.types import OutboundMessage
+        msg = OutboundMessage(
+            text=f"[long_task] {text}",
+            channel=ctx.current_channel,
+            user=ctx.current_user,
+        )
+        loop = asyncio.get_event_loop()
+        loop.call_soon_threadsafe(ctx.outbound_queue.put_nowait, msg)
+    except Exception as exc:
+        log.warning("Failed to send notification: %s", exc)

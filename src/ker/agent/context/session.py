@@ -130,6 +130,51 @@ class SessionStore:
             for rec in records:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
+    @staticmethod
+    def _sanitize_tool_pairs(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Strip tool_use blocks that lack a matching tool_result in the next message.
+
+        This prevents the Anthropic API error:
+        'tool_use ids were found without tool_result blocks immediately after'.
+        """
+        for i, msg in enumerate(messages):
+            if msg.get("role") != "assistant" or not isinstance(msg.get("content"), list):
+                continue
+
+            tool_use_ids = {
+                b["id"] for b in msg["content"]
+                if isinstance(b, dict) and b.get("type") == "tool_use"
+            }
+            if not tool_use_ids:
+                continue
+
+            # Check if the next message has matching tool_results
+            if i + 1 < len(messages):
+                nxt = messages[i + 1]
+                if nxt.get("role") == "user" and isinstance(nxt.get("content"), list):
+                    result_ids = {
+                        b.get("tool_use_id") for b in nxt["content"]
+                        if isinstance(b, dict) and b.get("type") == "tool_result"
+                    }
+                    if tool_use_ids <= result_ids:
+                        continue  # all tool_use blocks accounted for
+
+            # Remove orphaned tool_use blocks
+            msg["content"] = [
+                b for b in msg["content"]
+                if not (isinstance(b, dict) and b.get("type") == "tool_use")
+            ]
+
+        # Drop assistant messages that became empty after stripping
+        return [
+            msg for msg in messages
+            if not (
+                msg.get("role") == "assistant"
+                and isinstance(msg.get("content"), list)
+                and not msg["content"]
+            )
+        ]
+
     def _rebuild_history(self, path: Path) -> list[dict[str, Any]]:
         lines = path.read_text(encoding="utf-8").splitlines()
         messages: list[dict[str, Any]] = []
@@ -182,6 +227,10 @@ class SessionStore:
                     messages[-1]["content"].append(block)
                 else:
                     messages.append({"role": "user", "content": [block]})
+
+        # Sanitize orphaned tool_use blocks (e.g. from prior crashes or
+        # incomplete saves where tool_use was persisted without tool_result)
+        messages = self._sanitize_tool_pairs(messages)
 
         # Resolve media references for the last 5 user messages with media
         # to keep context size bounded.  Import here to avoid circular deps.

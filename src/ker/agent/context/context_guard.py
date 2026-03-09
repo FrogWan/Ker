@@ -28,6 +28,25 @@ class ContextGuard:
         keep_count = max(4, int(len(messages) * 0.2))
         compress_count = max(2, int(len(messages) * 0.5))
         compress_count = min(compress_count, len(messages) - keep_count)
+
+        # Adjust cut point so the remaining section starts at a user text
+        # message (not a tool_result list or an assistant message), which
+        # would break the required tool_use → tool_result pairing.
+        while compress_count > 1:
+            msg = messages[compress_count]
+            role = msg.get("role")
+            content = msg.get("content")
+            if role == "user" and isinstance(content, str):
+                break  # safe: plain user text
+            if role == "user" and isinstance(content, list):
+                first_type = content[0].get("type", "") if content else ""
+                if first_type != "tool_result":
+                    break  # safe: user content blocks (image/text)
+            compress_count -= 1
+
+        if compress_count < 2:
+            return messages  # no safe boundary found; skip compaction
+
         old = messages[:compress_count]
         summary_lines = []
         for m in old:

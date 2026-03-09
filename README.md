@@ -77,6 +77,8 @@ KERWEB_API_KEY=...
 
 Get the key at [kerweb-app.azurewebsites.net](https://kerweb-app.azurewebsites.net/) → Settings → copy the API Key.
 
+![KerWeb API Key in Settings](screenshots/apikey.png)
+
 ### 4. Start Ker
 
 **CLI mode** (interactive terminal, default):

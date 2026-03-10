@@ -24,6 +24,7 @@ TOOLS: list[dict[str, Any]] = [
     {"name": "capture_agent_conversation", "description": "Start a background watcher that captures and records the conversation from an external coding agent session (claude or codex) once it finishes.", "input_schema": {"type": "object", "properties": {"agent": {"type": "string", "enum": ["claude", "codex"]}, "working_dir": {"type": "string"}, "label": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 30, "maximum": 7200}, "store_to_memory": {"type": "boolean"}}, "required": ["agent", "working_dir"]}},
     {"name": "self_evolve", "description": "Manage Ker's self-evolution: view status, review history, trigger manual cycle, configure schedule.", "input_schema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["status", "history", "trigger", "config"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 50}, "cron_expr": {"type": "string"}, "enabled": {"type": "boolean"}}, "required": ["action"]}},
     {"name": "long_task", "description": "Run a long-running coding task via Claude CLI with iterative review. Actions: start, status, cancel, list.", "input_schema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["start", "status", "cancel", "list"]}, "task_name": {"type": "string", "description": "Task identifier (used as folder name)"}, "workspace": {"type": "string", "description": "Absolute path to workspace folder. Required for start."}, "description": {"type": "string", "description": "Full task description. Required for start."}, "max_iterations": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["action"]}},
+    {"name": "fallback", "description": "Delegate a request to Claude Code or Codex CLI. Runs in background and notifies user when done.", "input_schema": {"type": "object", "properties": {"request": {"type": "string", "minLength": 1}, "task_name": {"type": "string"}, "timeout": {"type": "integer", "minimum": 30, "maximum": 7200}, "prefer": {"type": "string", "enum": ["claude", "codex"]}}, "required": ["request"]}},
 ]
 
 
@@ -46,6 +47,7 @@ class ToolRegistry:
         from ker.tools.tool_capture import capture_agent_conversation
         from ker.tools.tool_evolve import self_evolve
         from ker.tools.tool_longtask import long_task
+        from ker.tools.tool_fallback import fallback
 
         ctx = self.ctx
         self._handlers = {
@@ -66,6 +68,7 @@ class ToolRegistry:
             "capture_agent_conversation": lambda agent, working_dir, label=None, timeout_seconds=3600, store_to_memory=True: capture_agent_conversation(ctx, agent=agent, working_dir=working_dir, label=label, timeout_seconds=timeout_seconds, store_to_memory=store_to_memory),
             "self_evolve": lambda action, limit=10, cron_expr=None, enabled=None: self_evolve(ctx, action=action, limit=limit, cron_expr=cron_expr, enabled=enabled),
             "long_task": lambda action, task_name=None, workspace=None, description=None, max_iterations=3: long_task(ctx, action=action, task_name=task_name, workspace=workspace, description=description, max_iterations=max_iterations),
+            "fallback": lambda request, task_name=None, timeout=7200, prefer=None: fallback(ctx, request=request, task_name=task_name, timeout=timeout, prefer=prefer),
         }
 
     def register(self, name: str, schema: dict[str, Any], handler: Callable[..., Any]) -> None:

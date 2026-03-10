@@ -7,8 +7,6 @@ import platform
 import shutil
 import signal
 import subprocess
-import threading
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,22 +16,26 @@ from ker.tools.tool_base import ToolContext
 log = get_logger("longtask")
 
 LONG_TASK_DIR = "longTask"
+ITERATION_TIMEOUT = 7200  # 2 hours per claude invocation
+
+# Keep references to background tasks so they aren't garbage-collected.
+_background_tasks: dict[str, asyncio.Task] = {}
 
 
-def long_task(
+async def long_task(
     ctx: ToolContext,
     action: str,
     task_name: str | None = None,
     workspace: str | None = None,
     description: str | None = None,
-    max_iterations: int = 3,
+    max_iterations: int = 50,
 ) -> str:
     if action == "start":
-        return _start(ctx, task_name, workspace, description, max_iterations)
+        return await _start(ctx, task_name, workspace, description, max_iterations)
     elif action == "status":
         return _status(ctx, task_name)
     elif action == "cancel":
-        return _cancel(ctx, task_name)
+        return await _cancel(ctx, task_name)
     elif action == "list":
         return _list(ctx)
     else:
@@ -44,7 +46,7 @@ def long_task(
 # Actions
 # ---------------------------------------------------------------------------
 
-def _start(
+async def _start(
     ctx: ToolContext,
     task_name: str | None,
     workspace: str | None,
@@ -96,14 +98,13 @@ def _start(
     }
     _write_status(status_path, status)
 
-    # Launch daemon thread
-    t = threading.Thread(
-        target=_task_runner,
-        args=(ctx, task_name, task_dir, workspace_path, max_iterations),
-        daemon=True,
+    # Launch as asyncio task
+    task = asyncio.create_task(
+        _task_runner(ctx, task_name, task_dir, workspace_path, max_iterations),
         name=f"longtask-{task_name}",
     )
-    t.start()
+    _background_tasks[task_name] = task
+    task.add_done_callback(lambda t: _background_tasks.pop(task_name, None))
 
     return (
         f"Long task '{task_name}' started.\n"
@@ -154,7 +155,7 @@ def _status(ctx: ToolContext, task_name: str | None) -> str:
     return "\n".join(lines)
 
 
-def _cancel(ctx: ToolContext, task_name: str | None) -> str:
+async def _cancel(ctx: ToolContext, task_name: str | None) -> str:
     if not task_name:
         return "Error: task_name is required for cancel."
 
@@ -174,6 +175,11 @@ def _cancel(ctx: ToolContext, task_name: str | None) -> str:
     pid = status.get("pid")
     if pid:
         _kill_process_tree(pid)
+
+    # Cancel the asyncio task if still running
+    bg = _background_tasks.pop(task_name, None)
+    if bg and not bg.done():
+        bg.cancel()
 
     return f"Task '{task_name}' cancelled."
 
@@ -207,7 +213,7 @@ def _list(ctx: ToolContext) -> str:
 # Background runner
 # ---------------------------------------------------------------------------
 
-def _task_runner(
+async def _task_runner(
     ctx: ToolContext,
     task_name: str,
     task_dir: Path,
@@ -234,7 +240,7 @@ def _task_runner(
 
             worker_prompt = _build_worker_prompt(task_md, workspace_path, iteration, feedback)
             worker_log = task_dir / f"worker_iter{iteration}.log"
-            exit_code = _run_claude(worker_prompt, workspace_path, worker_log, status_path)
+            exit_code = await _run_claude(worker_prompt, workspace_path, worker_log, status_path)
 
             _append_history(status_path, {
                 "iteration": iteration,
@@ -250,7 +256,7 @@ def _task_runner(
                     "current_agent": None,
                     "pid": None,
                 })
-                _notify(ctx, f"Long task '{task_name}' failed: worker exit code {exit_code} (iteration {iteration})")
+                await _notify(ctx, f"Long task '{task_name}' failed: worker exit code {exit_code} (iteration {iteration})")
                 return
 
             # Check cancellation again
@@ -266,7 +272,7 @@ def _task_runner(
 
             review_prompt = _build_review_prompt(task_md, workspace_path)
             reviewer_log = task_dir / f"reviewer_iter{iteration}.log"
-            review_exit = _run_claude(review_prompt, workspace_path, reviewer_log, status_path)
+            review_exit = await _run_claude(review_prompt, workspace_path, reviewer_log, status_path)
 
             verdict, review_feedback = _parse_reviewer_log(reviewer_log)
 
@@ -286,7 +292,7 @@ def _task_runner(
                     "current_agent": None,
                     "pid": None,
                 })
-                _notify(ctx, f"Long task '{task_name}' completed successfully after {iteration} iteration(s).")
+                await _notify(ctx, f"Long task '{task_name}' completed successfully after {iteration} iteration(s).")
                 return
 
             # Feed review feedback into next iteration
@@ -300,8 +306,15 @@ def _task_runner(
             "current_agent": None,
             "pid": None,
         })
-        _notify(ctx, f"Long task '{task_name}' failed: exhausted {max_iterations} iterations.")
+        await _notify(ctx, f"Long task '{task_name}' failed: exhausted {max_iterations} iterations.")
 
+    except asyncio.CancelledError:
+        log.info("Task %s asyncio task cancelled", task_name)
+        _update_status(status_path, {
+            "status": "cancelled",
+            "current_agent": None,
+            "pid": None,
+        })
     except Exception as exc:
         log.error("Task %s runner crashed: %s", task_name, exc)
         try:
@@ -313,10 +326,10 @@ def _task_runner(
             })
         except Exception:
             pass
-        _notify(ctx, f"Long task '{task_name}' crashed: {exc}")
+        await _notify(ctx, f"Long task '{task_name}' crashed: {exc}")
 
 
-def _run_claude(prompt: str, workspace: Path, log_file: Path, status_path: Path) -> int:
+async def _run_claude(prompt: str, workspace: Path, log_file: Path, status_path: Path) -> int:
     cmd = [
         "claude",
         "--dangerously-skip-permissions",
@@ -327,19 +340,29 @@ def _run_claude(prompt: str, workspace: Path, log_file: Path, status_path: Path)
     env.pop("CLAUDECODE", None)  # Allow nested Claude Code sessions
 
     with open(log_file, "w", encoding="utf-8") as f:
-        proc = subprocess.Popen(
-            cmd,
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
             cwd=str(workspace),
             stdout=f,
-            stderr=subprocess.STDOUT,
+            stderr=asyncio.subprocess.STDOUT,
+            stdin=asyncio.subprocess.DEVNULL,
             env=env,
         )
 
-    # Store PID for cancel support
-    _update_status(status_path, {"pid": proc.pid})
+        _update_status(status_path, {"pid": proc.pid})
 
-    proc.wait()
-    return proc.returncode
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=ITERATION_TIMEOUT)
+        except asyncio.TimeoutError:
+            log.warning("Claude process %d timed out after %ds, killing", proc.pid, ITERATION_TIMEOUT)
+            _kill_process_tree(proc.pid)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=10)
+            except asyncio.TimeoutError:
+                proc.kill()
+            return -1
+
+    return proc.returncode if proc.returncode is not None else -1
 
 
 # ---------------------------------------------------------------------------
@@ -496,7 +519,7 @@ def _kill_process_tree(pid: int) -> None:
 # Notification
 # ---------------------------------------------------------------------------
 
-def _notify(ctx: ToolContext, text: str) -> None:
+async def _notify(ctx: ToolContext, text: str) -> None:
     log.info("Notification: %s", text)
     if ctx.outbound_queue is None:
         return
@@ -507,7 +530,6 @@ def _notify(ctx: ToolContext, text: str) -> None:
             channel=ctx.current_channel,
             user=ctx.current_user,
         )
-        loop = asyncio.get_event_loop()
-        loop.call_soon_threadsafe(ctx.outbound_queue.put_nowait, msg)
+        await ctx.outbound_queue.put(msg)
     except Exception as exc:
         log.warning("Failed to send notification: %s", exc)

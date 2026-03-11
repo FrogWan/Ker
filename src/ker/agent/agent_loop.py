@@ -204,6 +204,13 @@ class AgentLoop:
                 agent_name, _elapsed, len(text or ""),
             )
             return TurnResult(text=text or "(no text response)", agent_name=agent_name, session_id=session_id)
+        except asyncio.CancelledError:
+            _elapsed = _time.monotonic() - _turn_start
+            log.info(
+                "run_turn CANCELLED: agent=%s session=%s elapsed=%.1fs",
+                agent_name, session_id, _elapsed,
+            )
+            raise
         except Exception as exc:
             _elapsed = _time.monotonic() - _turn_start
             log.error(

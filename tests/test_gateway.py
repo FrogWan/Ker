@@ -129,6 +129,23 @@ def test_cmd_rename_bad_chars(tmp_path: Path):
     assert "old -> new-name" in output
 
 
+def test_cmd_stop_idle(tmp_path: Path):
+    """When no turn is running, /stop prints 'Nothing to stop.'."""
+    settings = _make_settings(tmp_path)
+    gw = Gateway(settings)
+    gw.discover_agents()
+    output = _run_command(gw, "/stop")
+    assert "Nothing to stop" in output
+
+
+def test_cmd_help_lists_stop(tmp_path: Path):
+    settings = _make_settings(tmp_path)
+    gw = Gateway(settings)
+    gw.discover_agents()
+    output = _run_command(gw, "/help")
+    assert "/stop" in output
+
+
 def test_build_agents_info_has_session_validation(tmp_path: Path):
     settings = _make_settings(tmp_path)
     gw = Gateway(settings)

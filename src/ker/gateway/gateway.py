@@ -34,6 +34,10 @@ from ker.types import InboundMessage, OutboundMessage
 log = get_logger("gateway")
 
 
+class _ExitRequested(Exception):
+    """Sentinel raised when /exit is received during a running turn."""
+
+
 class Gateway:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -108,6 +112,10 @@ class Gateway:
         # Current session state
         self.current_session = "default"
         self.force_agent: str | None = None
+
+        # Stop support: track the running turn task so /stop can cancel it
+        self._current_turn_task: asyncio.Task | None = None
+        self._current_turn_inbound: InboundMessage | None = None
 
     def register_channel(self, channel: AsyncChannel) -> None:
         self.channels[channel.name] = channel
@@ -311,29 +319,18 @@ class Gateway:
 
                 log.info("Starting turn: agent=%s session=%s", agent_name, session_id)
                 agent_config = self.agent_configs.get(agent_name)
-                result = await self.agent_loop.run_turn(
-                    inbound, agent_name, session_id,
-                    thinking_callback=lambda s: asyncio.ensure_future(thinking_cb(s)),
-                    agent_config=agent_config,
-                )
-
-                log.info(
-                    "Turn completed: agent=%s text_len=%d",
-                    agent_name, len(result.text),
-                )
-
-                # Broadcast job idle
-                for ch in self.channels.values():
-                    await ch.update_job(inbound.user or "cli-user", None)
-
-                await self.outbound_queue.put(
-                    OutboundMessage(
-                        text=result.text,
-                        channel=inbound.channel,
-                        user=inbound.user or "cli-user",
-                        session_name=inbound.session_name,
+                self._current_turn_inbound = inbound
+                self._current_turn_task = asyncio.create_task(
+                    self.agent_loop.run_turn(
+                        inbound, agent_name, session_id,
+                        thinking_callback=lambda s: asyncio.ensure_future(thinking_cb(s)),
+                        agent_config=agent_config,
                     )
                 )
+                await self._await_turn_or_command()
+            except _ExitRequested:
+                log.info("Exit requested during running turn")
+                break
             except Exception as exc:
                 log.error(
                     "Turn failed: channel=%s user=%s agent=%s error=%s",
@@ -352,6 +349,111 @@ class Gateway:
                         user=inbound.user or "cli-user",
                     )
                 )
+
+    async def _await_turn_or_command(self) -> None:
+        """Wait for the current turn task, but also listen for queue items
+        (like /stop or /exit) so the user can interrupt a running turn."""
+        task = self._current_turn_task
+        assert task is not None
+        inbound = self._current_turn_inbound
+        assert inbound is not None
+
+        pending_get: asyncio.Task | None = None
+        try:
+            while not task.done():
+                if pending_get is None:
+                    pending_get = asyncio.create_task(self.inbound_queue.get())
+                done, _ = await asyncio.wait(
+                    {task, pending_get}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if pending_get in done:
+                    new_msg: InboundMessage = pending_get.result()
+                    pending_get = None
+                    new_text = new_msg.text.strip()
+
+                    if new_text == "/stop":
+                        await self._handle_stop(new_msg)
+                        return
+                    elif new_text in ("/exit", "quit", "exit"):
+                        await self._handle_stop(new_msg)
+                        raise _ExitRequested()
+                    elif new_text.startswith("/"):
+                        # Dispatch read-only commands while turn runs
+                        import io
+                        from contextlib import redirect_stdout
+
+                        buf = io.StringIO()
+                        with redirect_stdout(buf):
+                            handled = dispatch_command(self, new_text)
+                        output = buf.getvalue().strip()
+                        if handled and output:
+                            await self.outbound_queue.put(
+                                OutboundMessage(
+                                    text=output,
+                                    channel=new_msg.channel,
+                                    user=new_msg.user or "cli-user",
+                                    session_name=new_msg.session_name,
+                                )
+                            )
+                    else:
+                        await self.outbound_queue.put(
+                            OutboundMessage(
+                                text="Agent is busy. Use /stop to cancel.",
+                                channel=new_msg.channel,
+                                user=new_msg.user or "cli-user",
+                                session_name=new_msg.session_name,
+                            )
+                        )
+        finally:
+            if pending_get is not None and not pending_get.done():
+                pending_get.cancel()
+            self._current_turn_task = None
+            self._current_turn_inbound = None
+
+        # Turn completed normally — process the result
+        result = task.result()
+        log.info(
+            "Turn completed: agent=%s text_len=%d",
+            result.agent_name, len(result.text),
+        )
+
+        # Broadcast job idle
+        for ch in self.channels.values():
+            await ch.update_job(inbound.user or "cli-user", None)
+
+        await self.outbound_queue.put(
+            OutboundMessage(
+                text=result.text,
+                channel=inbound.channel,
+                user=inbound.user or "cli-user",
+                session_name=inbound.session_name,
+            )
+        )
+
+    async def _handle_stop(self, stop_msg: InboundMessage) -> None:
+        """Cancel the current turn task and notify the user."""
+        task = self._current_turn_task
+        if task is None or task.done():
+            return
+        log.info("Stop requested: cancelling current turn")
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+        # Clear job status
+        if self._current_turn_inbound:
+            for ch in self.channels.values():
+                await ch.update_job(self._current_turn_inbound.user or "cli-user", None)
+        # Notify user
+        await self.outbound_queue.put(
+            OutboundMessage(
+                text="Agent stopped.",
+                channel=stop_msg.channel,
+                user=stop_msg.user or "cli-user",
+                session_name=stop_msg.session_name,
+            )
+        )
 
     async def _outbound_processor(self) -> None:
         while True:

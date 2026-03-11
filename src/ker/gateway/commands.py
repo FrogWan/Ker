@@ -22,6 +22,7 @@ def dispatch_command(gw: Gateway, text: str) -> bool:
 def _handle_exact(gw: Gateway, text: str) -> bool:
     handlers = {
         "/help": _cmd_help,
+        "/stop": _cmd_stop,
         "/agents": _cmd_agents,
         "/sessions": _cmd_sessions,
         "/context": _cmd_context,
@@ -57,11 +58,15 @@ def _handle_prefix(gw: Gateway, text: str) -> bool:
 
 def _cmd_help(gw: Gateway, text: str) -> None:
     print("Commands:")
-    print("  /help /exit")
+    print("  /help /exit /stop")
     print("  /agents /switch-agent <name|off>")
     print("  /sessions /new <name> /switch <name> /rename <name> /context /compact")
     print("  /prompt /skills /search <query>")
     print("  /heartbeat /trigger /cron /cron-run <job_id>")
+
+
+def _cmd_stop(gw: Gateway, text: str) -> None:
+    print("Nothing to stop.")
 
 
 def _cmd_agents(gw: Gateway, text: str) -> None:

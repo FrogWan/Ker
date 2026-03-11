@@ -101,6 +101,14 @@ async def exec_command(ctx: ToolContext, command: str, timeout: int = 60, workin
         except asyncio.TimeoutError:
             pass
         return f"Error: Command timed out after {timeout}s\nCommand: {command[:200]}"
+    except asyncio.CancelledError:
+        log.info("exec CANCELLED: cmd=%s", repr(command[:200]))
+        await _kill_process_tree(proc)
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            pass
+        raise
 
     elapsed = time.monotonic() - t0
     out = stdout_bytes.decode(errors="replace") if stdout_bytes else ""

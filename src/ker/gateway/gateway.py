@@ -459,12 +459,13 @@ class Gateway:
         while True:
             outbound = await self.outbound_queue.get()
             channel = self.channels.get(outbound.channel)
+            media_kw = {"media": outbound.media} if outbound.media else {}
             if channel:
-                await channel.send(outbound.user, outbound.text)
+                await channel.send(outbound.user, outbound.text, **media_kw)
             else:
                 # Fallback: send to all channels
                 for ch in self.channels.values():
-                    await ch.send(outbound.user, outbound.text)
+                    await ch.send(outbound.user, outbound.text, **media_kw)
 
     async def _cron_ticker(self) -> None:
         if not self.settings.cron_enabled:

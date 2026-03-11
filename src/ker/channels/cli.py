@@ -23,6 +23,16 @@ class CLIChannel(AsyncChannel):
 
     async def send(self, to: str, text: str, **kwargs: Any) -> bool:
         print(f"Assistant > {text}")
+        media = kwargs.get("media")
+        if media:
+            for item in media:
+                filename = item.get("filename", "unknown")
+                mime = item.get("media_type", "")
+                if "data" in item:
+                    print(f"  [attachment: {filename} ({mime}, base64-encoded)]")
+                else:
+                    size = item.get("size", 0)
+                    print(f"  [attachment: {filename} ({mime}, {size} bytes)]")
         return True
 
     async def thinking(self, status: str) -> None:

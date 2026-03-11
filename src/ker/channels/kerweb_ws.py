@@ -217,12 +217,16 @@ class KerWebWSChannel(AsyncChannel):
             return None
 
     async def send(self, to: str, text: str, **kwargs: Any) -> bool:
-        return await self._send_frame("output", {
+        payload: dict[str, Any] = {
             "content": text,
             "to": to,
             "agent": kwargs.get("agent", self.current_agent),
             "session": kwargs.get("session", self.current_session),
-        })
+        }
+        media = kwargs.get("media")
+        if media:
+            payload["media"] = media
+        return await self._send_frame("output", payload)
 
     async def thinking(self, status: str) -> None:
         await self._send_frame("thinking", {

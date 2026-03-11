@@ -19,6 +19,7 @@ TOOLS: list[dict[str, Any]] = [
 {"name": "web_search", "description": "Search the web via DuckDuckGo.", "input_schema": {"type": "object", "properties": {"query": {"type": "string", "minLength": 1}, "count": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["query"]}},
     {"name": "web_fetch", "description": "Fetch URL and extract readable content.", "input_schema": {"type": "object", "properties": {"url": {"type": "string", "minLength": 1}, "extractMode": {"type": "string", "enum": ["markdown", "text"]}, "maxChars": {"type": "integer", "minimum": 100}}, "required": ["url"]}},
     {"name": "cron", "description": "Manage cron jobs (add/list/remove).", "input_schema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["add", "list", "remove"]}, "message": {"type": "string"}, "every_seconds": {"type": "integer", "minimum": 1}, "cron_expr": {"type": "string"}, "at": {"type": "string"}, "job_id": {"type": "string"}, "tz": {"type": "string", "description": "IANA timezone for cron expressions (e.g. America/New_York)"}}, "required": ["action"]}},
+    {"name": "reply_user", "description": "Send content directly to the user immediately. Use when you need to deliver text, files, images, or video without waiting for your final response.", "input_schema": {"type": "object", "properties": {"content": {"type": "string", "description": "Text content to send"}, "file_paths": {"type": "array", "items": {"type": "string"}, "description": "File paths (relative to workspace) to attach. Supports images, video, documents.", "maxItems": 10}}, "required": []}},
     {"name": "message", "description": "Send a direct message to channel peer (CLI sim).", "input_schema": {"type": "object", "properties": {"content": {"type": "string"}, "channel": {"type": "string"}, "chat_id": {"type": "string"}}, "required": ["content"]}},
     {"name": "spawn", "description": "Spawn background subtask.", "input_schema": {"type": "object", "properties": {"task": {"type": "string"}, "label": {"type": "string"}}, "required": ["task"]}},
     {"name": "capture_agent_conversation", "description": "Start a background watcher that captures and records the conversation from an external coding agent session (claude or codex) once it finishes.", "input_schema": {"type": "object", "properties": {"agent": {"type": "string", "enum": ["claude", "codex"]}, "working_dir": {"type": "string"}, "label": {"type": "string"}, "timeout_seconds": {"type": "integer", "minimum": 30, "maximum": 7200}, "store_to_memory": {"type": "boolean"}}, "required": ["agent", "working_dir"]}},
@@ -42,6 +43,7 @@ class ToolRegistry:
         from ker.tools.tool_web import web_search, web_fetch
         from ker.tools.tool_cron import cron
         from ker.tools.tool_message import message
+        from ker.tools.tool_reply import reply_user
         from ker.tools.tool_spawn import spawn
         from ker.tools.tool_skill import skill
         from ker.tools.tool_capture import capture_agent_conversation
@@ -63,6 +65,7 @@ class ToolRegistry:
             "web_search": lambda query, count=5: web_search(ctx, query=query, count=count),
             "web_fetch": lambda url, extractMode="markdown", maxChars=50000: web_fetch(ctx, url=url, extractMode=extractMode, maxChars=maxChars),
             "cron": lambda action, message="", every_seconds=None, cron_expr=None, at=None, job_id=None, tz=None: cron(ctx, action=action, message=message, every_seconds=every_seconds, cron_expr=cron_expr, at=at, job_id=job_id, tz=tz),
+            "reply_user": lambda content="", file_paths=None: reply_user(ctx, content=content, file_paths=file_paths),
             "message": lambda content, channel=None, chat_id=None: message(ctx, content=content, channel=channel, chat_id=chat_id),
             "spawn": lambda task, label=None: spawn(ctx, task=task, label=label),
             "capture_agent_conversation": lambda agent, working_dir, label=None, timeout_seconds=3600, store_to_memory=True: capture_agent_conversation(ctx, agent=agent, working_dir=working_dir, label=label, timeout_seconds=timeout_seconds, store_to_memory=store_to_memory),

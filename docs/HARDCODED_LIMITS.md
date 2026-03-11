@@ -64,6 +64,8 @@ All hardcoded numeric limits, thresholds, and caps in the Ker codebase.
 |-------|------|------|-------------|
 | 10 | `src/ker/tools/tool_registry.py` | 19 | Web search max result count |
 | 100 | `src/ker/tools/tool_registry.py` | 20 | Web fetch `maxChars` minimum |
+| 10 | `src/ker/tools/tool_reply.py` | 13 | `reply_user` max file attachments |
+| 10 MB | `src/ker/tools/tool_reply.py` | 14 | `reply_user` max base64-encoded image size |
 | 20 | `src/ker/tools/tool_registry.py` | 17 | `read_memory` `top_k` maximum |
 | 50 | `src/ker/tools/tool_registry.py` | 25 | `self_evolve` history limit maximum |
 | 5 | `src/ker/agent/context/session.py` | 239 | Recent media messages kept |

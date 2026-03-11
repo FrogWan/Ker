@@ -64,7 +64,8 @@ class KerWebPollingChannel(AsyncChannel):
 
         for msg in data:
             content = str(msg.get("content", "")).strip()
-            if not content:
+            media_list = msg.get("media") or []
+            if not content and not media_list:
                 continue
             sender_id = str(msg.get("profileId") or msg.get("loginName") or msg.get("from") or "kerweb-user")
             session_name = sanitize_session_name(str(msg.get("session") or "default"))
@@ -76,6 +77,7 @@ class KerWebPollingChannel(AsyncChannel):
                     channel=self.name,
                     user=sender_id,
                     session_name=session_name,
+                    media=media_list,
                     raw={"message_id": str(msg.get("id", "")), "source": "kerweb", "agent": agent_hint},
                 )
             )
@@ -87,14 +89,18 @@ class KerWebPollingChannel(AsyncChannel):
             return False
         client = await self._get_client()
         try:
+            payload: dict[str, Any] = {
+                "content": text,
+                "to": to,
+                "agent": kwargs.get("agent", self.current_agent),
+                "session": kwargs.get("session", self.current_session),
+            }
+            media = kwargs.get("media")
+            if media:
+                payload["media"] = media
             r = await client.post(
                 f"{self.config.base_url.rstrip('/')}/api/agent/output",
-                json={
-                    "content": text,
-                    "to": to,
-                    "agent": kwargs.get("agent", self.current_agent),
-                    "session": kwargs.get("session", self.current_session),
-                },
+                json=payload,
                 headers={"x-api-key": self.config.api_key, "Content-Type": "application/json"},
             )
             return r.status_code == 200

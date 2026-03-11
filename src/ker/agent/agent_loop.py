@@ -155,16 +155,24 @@ class AgentLoop:
             len(system_prompt), len(tool_schemas), model_id,
         )
 
-        # Run model loop
+        # Run model loop — turn_timeout covers the ENTIRE loop (LLM + tools)
         try:
             if thinking_callback:
                 thinking_callback("Preparing context and system prompt")
 
             original_count = len(messages)
-            response, updated_messages = await self._run_model_loop(
-                system_prompt, messages, tool_schemas, thinking_callback,
-                model_id=model_id, max_tokens=max_tokens,
-            )
+            try:
+                response, updated_messages = await asyncio.wait_for(
+                    self._run_model_loop(
+                        system_prompt, messages, tool_schemas, thinking_callback,
+                        model_id=model_id, max_tokens=max_tokens,
+                    ),
+                    timeout=self.turn_timeout,
+                )
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"Turn timed out after {self.turn_timeout:.0f}s (LLM + tool execution)"
+                )
             text = self._extract_text(response)
 
             # Store ALL new messages from the model loop (intermediate
@@ -237,28 +245,16 @@ class AgentLoop:
                 "Calling LLM API: model=%s messages=%d tools=%d max_tokens=%d",
                 effective_model, len(current_messages), len(tools), effective_max_tokens,
             )
-            try:
-                response = await asyncio.wait_for(
-                    self.context_guard.guard_call(
-                        lambda guarded_messages: self.provider.create_message(
-                            model=effective_model,
-                            system=system,
-                            messages=guarded_messages,
-                            tools=tools,
-                            max_tokens=effective_max_tokens,
-                        ),
-                        current_messages,
-                    ),
-                    timeout=self.turn_timeout,
-                )
-            except asyncio.TimeoutError:
-                log.error(
-                    "LLM call timed out: iteration=%d elapsed=%.0fs",
-                    iteration + 1, self.turn_timeout,
-                )
-                raise RuntimeError(
-                    f"LLM call timed out after {self.turn_timeout:.0f}s"
-                )
+            response = await self.context_guard.guard_call(
+                lambda guarded_messages: self.provider.create_message(
+                    model=effective_model,
+                    system=system,
+                    messages=guarded_messages,
+                    tools=tools,
+                    max_tokens=effective_max_tokens,
+                ),
+                current_messages,
+            )
 
             block_types = [b.type for b in response.content]
             log.info(

@@ -7,8 +7,8 @@ from typing import Any
 from ker.tools.tool_base import ToolContext
 
 TOOLS: list[dict[str, Any]] = [
-    {"name": "exec", "description": "Execute a shell command with safety guard.", "input_schema": {"type": "object", "properties": {"command": {"type": "string", "minLength": 1}, "timeout": {"type": "integer", "minimum": 1, "maximum": 300}, "working_dir": {"type": "string"}}, "required": ["command"]}},
-    {"name": "bash", "description": "Alias for exec.", "input_schema": {"type": "object", "properties": {"command": {"type": "string", "minLength": 1}, "timeout": {"type": "integer", "minimum": 1, "maximum": 300}}, "required": ["command"]}},
+    {"name": "exec", "description": "Execute a shell command with safety guard. stdin is closed by default; use stdin_text to pipe input to interactive commands.", "input_schema": {"type": "object", "properties": {"command": {"type": "string", "minLength": 1}, "timeout": {"type": "integer", "minimum": 1, "maximum": 300}, "working_dir": {"type": "string"}, "stdin_text": {"type": "string", "description": "Text to pipe to the command's stdin (e.g. 'y\\n' for confirmation prompts)"}}, "required": ["command"]}},
+    {"name": "bash", "description": "Alias for exec. stdin is closed by default; use stdin_text to pipe input.", "input_schema": {"type": "object", "properties": {"command": {"type": "string", "minLength": 1}, "timeout": {"type": "integer", "minimum": 1, "maximum": 300}, "stdin_text": {"type": "string", "description": "Text to pipe to the command's stdin"}}, "required": ["command"]}},
     {"name": "read_file", "description": "Read file contents from workspace.", "input_schema": {"type": "object", "properties": {"path": {"type": "string", "minLength": 1}}, "required": ["path"]}},
     {"name": "write_file", "description": "Write file contents under workspace.", "input_schema": {"type": "object", "properties": {"path": {"type": "string", "minLength": 1}, "content": {"type": "string"}}, "required": ["path", "content"]}},
     {"name": "edit_file", "description": "Replace old text with new text in a file.", "input_schema": {"type": "object", "properties": {"path": {"type": "string", "minLength": 1}, "old_text": {"type": "string", "minLength": 1}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
@@ -51,8 +51,8 @@ class ToolRegistry:
 
         ctx = self.ctx
         self._handlers = {
-            "exec": lambda command, timeout=60, working_dir=None: exec_command(ctx, command=command, timeout=timeout, working_dir=working_dir),
-            "bash": lambda command, timeout=30: bash(ctx, command=command, timeout=timeout),
+            "exec": lambda command, timeout=60, working_dir=None, stdin_text=None: exec_command(ctx, command=command, timeout=timeout, working_dir=working_dir, stdin_text=stdin_text),
+            "bash": lambda command, timeout=30, stdin_text=None: bash(ctx, command=command, timeout=timeout, stdin_text=stdin_text),
             "read_file": lambda path: read_file(ctx, path=path),
             "write_file": lambda path, content: write_file(ctx, path=path, content=content),
             "edit_file": lambda path, old_text, new_text: edit_file(ctx, path=path, old_text=old_text, new_text=new_text),

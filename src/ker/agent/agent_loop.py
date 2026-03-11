@@ -284,7 +284,17 @@ class AgentLoop:
                 for block in response.content:
                     if block.type != "tool_use":
                         continue
-                    log.info("Executing tool: %s keys=%s", block.name, list(block.input.keys()) if isinstance(block.input, dict) else "?")
+                    tool_detail = ""
+                    if isinstance(block.input, dict):
+                        if block.name == "bash" and "command" in block.input:
+                            tool_detail = " cmd=%s" % repr(block.input["command"][:200])
+                        elif block.name == "read_file" and "path" in block.input:
+                            tool_detail = " path=%s" % block.input["path"]
+                        elif block.name == "write_file" and "path" in block.input:
+                            tool_detail = " path=%s" % block.input["path"]
+                        elif block.name == "web_search" and "query" in block.input:
+                            tool_detail = " query=%s" % repr(block.input["query"][:100])
+                    log.info("Executing tool: %s keys=%s%s", block.name, list(block.input.keys()) if isinstance(block.input, dict) else "?", tool_detail)
                     if thinking_callback:
                         thinking_callback(f"Running tool: {block.name}")
                     result = await self.tool_execute(block.name, block.input)

@@ -21,7 +21,7 @@ Create a `.env` file in the project root with one of the provider configs:
 **GitHub Copilot (recommended):**
 ```env
 LLM_PROVIDER=github_copilot
-MODEL_ID=gpt-5.3-codex
+MODEL_ID=claude-opus-4-6
 ```
 Then run `uv run ker github_copilot login` to authenticate via OAuth device flow.
 

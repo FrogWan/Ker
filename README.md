@@ -283,6 +283,10 @@ Bootstrap templates ship with Ker and load automatically. Override by placing fi
 | `/cron` | List all cron jobs |
 | `/cron-run <job_id>` | Execute a cron job immediately |
 
+## Hardcoded Limits
+
+All numeric limits (token caps, timeouts, iteration maximums, truncation lengths, retry counts, polling intervals, thresholds) are cataloged in [`docs/HARDCODED_LIMITS.md`](docs/HARDCODED_LIMITS.md). When adding or changing any hardcoded limit, update that document in the same commit.
+
 ## Tests
 
 ```bash

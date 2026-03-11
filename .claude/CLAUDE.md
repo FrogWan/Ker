@@ -103,6 +103,12 @@ When adding new functionality:
 - Register handler in `ToolRegistry._register_all()`.
 - Add tests and docs.
 
+## Hardcoded Limits
+
+A catalog of every numeric limit, timeout, cap, and threshold lives in [`docs/HARDCODED_LIMITS.md`](../docs/HARDCODED_LIMITS.md).
+
+**Rule:** When you add or change any hardcoded numeric limit (token cap, iteration max, timeout, truncation length, retry count, polling interval, threshold, etc.), you **must** update `docs/HARDCODED_LIMITS.md` in the same commit.
+
 ## Cron-driven Changes
 
 Ker supports cron jobs via the `cron` tool.

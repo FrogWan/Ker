@@ -239,6 +239,10 @@ class Gateway:
             inbound = await self.inbound_queue.get()
             try:
                 text = inbound.text.strip()
+                log.info(
+                    "Received message: channel=%s user=%s text=%s",
+                    inbound.channel, inbound.user, text[:80],
+                )
                 if text in ("/exit", "quit", "exit"):
                     log.info("Exit command received")
                     break
@@ -305,11 +309,17 @@ class Gateway:
                             tool_name = status[len("Tool complete: "):]
                             await ch.append_tool_log(tool_name, "done")
 
+                log.info("Starting turn: agent=%s session=%s", agent_name, session_id)
                 agent_config = self.agent_configs.get(agent_name)
                 result = await self.agent_loop.run_turn(
                     inbound, agent_name, session_id,
                     thinking_callback=lambda s: asyncio.ensure_future(thinking_cb(s)),
                     agent_config=agent_config,
+                )
+
+                log.info(
+                    "Turn completed: agent=%s text_len=%d",
+                    agent_name, len(result.text),
                 )
 
                 # Broadcast job idle
@@ -325,11 +335,15 @@ class Gateway:
                     )
                 )
             except Exception as exc:
-                log.error("Turn failed: %s", exc)
+                log.error(
+                    "Turn failed: channel=%s user=%s agent=%s error=%s",
+                    inbound.channel, inbound.user,
+                    getattr(self, '_last_agent', '?'), exc,
+                )
                 self.memory_store.add_error(
                     source="gateway",
                     message=str(exc),
-                    context={"text": inbound.text[:100]},
+                    context={"text": inbound.text[:100], "channel": inbound.channel, "user": inbound.user},
                 )
                 await self.outbound_queue.put(
                     OutboundMessage(

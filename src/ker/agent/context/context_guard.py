@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from ker.logger import get_logger
+
+log = get_logger("context_guard")
+
 
 class ContextGuard:
     def truncate_large_tool_results(self, messages: list[dict[str, Any]], max_chars: int = 4000) -> list[dict[str, Any]]:
@@ -81,6 +85,11 @@ class ContextGuard:
                 overflow = "context" in msg or "token" in msg or "overflow" in msg
                 if not overflow or attempt >= max_retries:
                     raise
+                strategy = "truncation" if attempt == 0 else "compaction"
+                log.warning(
+                    "guard_call attempt %d failed: %s, retrying with %s",
+                    attempt + 1, exc, strategy,
+                )
                 if attempt == 0:
                     current = self.truncate_large_tool_results(current)
                 else:

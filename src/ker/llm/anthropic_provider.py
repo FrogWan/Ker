@@ -5,7 +5,10 @@ from typing import Any
 from anthropic import AsyncAnthropic
 
 from ker.llm.base import LLMProvider
+from ker.logger import get_logger
 from ker.types import ProviderBlock, ProviderResponse
+
+log = get_logger("anthropic")
 
 
 class AnthropicProvider(LLMProvider):
@@ -30,6 +33,10 @@ class AnthropicProvider(LLMProvider):
         }
         if tools:
             kwargs["tools"] = tools
+        log.info(
+            "Anthropic API call: model=%s messages=%d tools=%d max_tokens=%d",
+            model, len(messages), len(tools or []), max_tokens,
+        )
         response = await self._client.messages.create(**kwargs)
         blocks: list[ProviderBlock] = []
         for b in response.content:
@@ -45,4 +52,8 @@ class AnthropicProvider(LLMProvider):
                         input=getattr(b, "input", {}) or {},
                     )
                 )
+        log.info(
+            "Anthropic API response: stop_reason=%s blocks=%d",
+            response.stop_reason, len(blocks),
+        )
         return ProviderResponse(stop_reason=response.stop_reason, content=blocks)

@@ -86,8 +86,16 @@ class AgentLoop:
         thinking_callback: Callable[[str], Any] | None = None,
         agent_config: AgentConfig | None = None,
     ) -> TurnResult:
+        import time as _time
+        _turn_start = _time.monotonic()
+        log.info(
+            "run_turn START: agent=%s session=%s channel=%s text=%s",
+            agent_name, session_id, inbound.channel, (inbound.text or "")[:80],
+        )
+
         # Load session history
         messages = self.session_store.load_messages(agent_name, session_id)
+        log.info("Loaded %d session messages", len(messages))
 
         # Build user message — with image content blocks if media attached
         if inbound.media and self.ker_root:
@@ -142,6 +150,10 @@ class AgentLoop:
             session_name=inbound.session_name,
             session_type=session_type,
         )
+        log.info(
+            "System prompt built: len=%d tools=%d model=%s",
+            len(system_prompt), len(tool_schemas), model_id,
+        )
 
         # Run model loop
         try:
@@ -178,8 +190,18 @@ class AgentLoop:
             if inbound.sender_id != "system":
                 self.memory_store.add_daily(f"{inbound.sender_id}: {inbound.text}")
 
+            _elapsed = _time.monotonic() - _turn_start
+            log.info(
+                "run_turn DONE: agent=%s elapsed=%.1fs response_len=%d",
+                agent_name, _elapsed, len(text or ""),
+            )
             return TurnResult(text=text or "(no text response)", agent_name=agent_name, session_id=session_id)
         except Exception as exc:
+            _elapsed = _time.monotonic() - _turn_start
+            log.error(
+                "run_turn FAILED: agent=%s session=%s channel=%s elapsed=%.1fs error=%s",
+                agent_name, session_id, inbound.channel, _elapsed, exc,
+            )
             self.memory_store.add_error(
                 source="agent_loop",
                 message=str(exc),
@@ -204,9 +226,17 @@ class AgentLoop:
         effective_max_tokens = max_tokens or self.max_tokens
         current_messages = list(messages)
         for iteration in range(self.max_tool_iterations):
+            log.info(
+                "Model loop iteration %d: messages=%d",
+                iteration + 1, len(current_messages),
+            )
             if thinking_callback:
                 thinking_callback(f"Model iteration {iteration + 1}")
 
+            log.info(
+                "Calling LLM API: model=%s messages=%d tools=%d max_tokens=%d",
+                effective_model, len(current_messages), len(tools), effective_max_tokens,
+            )
             try:
                 response = await asyncio.wait_for(
                     self.context_guard.guard_call(
@@ -222,9 +252,19 @@ class AgentLoop:
                     timeout=self.turn_timeout,
                 )
             except asyncio.TimeoutError:
+                log.error(
+                    "LLM call timed out: iteration=%d elapsed=%.0fs",
+                    iteration + 1, self.turn_timeout,
+                )
                 raise RuntimeError(
                     f"LLM call timed out after {self.turn_timeout:.0f}s"
                 )
+
+            block_types = [b.type for b in response.content]
+            log.info(
+                "LLM response: stop_reason=%s blocks=%d types=%s",
+                response.stop_reason, len(response.content), block_types,
+            )
 
             assistant_blocks = []
             for block in response.content:
@@ -244,15 +284,18 @@ class AgentLoop:
                 for block in response.content:
                     if block.type != "tool_use":
                         continue
+                    log.info("Executing tool: %s keys=%s", block.name, list(block.input.keys()) if isinstance(block.input, dict) else "?")
                     if thinking_callback:
                         thinking_callback(f"Running tool: {block.name}")
                     result = await self.tool_execute(block.name, block.input)
+                    log.info("Tool done: %s result_len=%d", block.name, len(result) if isinstance(result, str) else 0)
                     results.append({"type": "tool_result", "tool_use_id": block.id, "content": result})
                 current_messages.append({"role": "user", "content": results})
                 continue
 
             return response, current_messages
 
+        log.error("Tool-use loop exceeded %d iterations", self.max_tool_iterations)
         raise RuntimeError("Tool-use loop exceeded max iterations")
 
     def _extract_text(self, response: ProviderResponse) -> str:

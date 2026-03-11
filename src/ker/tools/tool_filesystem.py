@@ -1,6 +1,49 @@
 from __future__ import annotations
 
+import logging
+
 from ker.tools.tool_base import ToolContext, safe_path
+
+logger = logging.getLogger(__name__)
+
+# Directories in the workspace root that are part of the project source.
+# Files written inside these are never redirected.
+_PROJECT_DIRS = {"src", "tests", "docs", ".ker", ".github", ".vscode", "screenshots"}
+
+# Script/code extensions that should be redirected when written to the project root.
+_SCRIPT_EXTENSIONS = {
+    ".py", ".js", ".ts", ".sh", ".bash", ".ps1", ".rb", ".pl", ".php",
+    ".java", ".go", ".rs", ".c", ".cpp", ".cs", ".swift", ".kt",
+}
+
+
+def _is_scratch_file(workspace: "Path", resolved: "Path") -> bool:
+    """Return True if the file looks like a scratch script written to the project root."""
+    try:
+        rel = resolved.relative_to(workspace.resolve())
+    except ValueError:
+        return False
+    parts = rel.parts
+    if not parts:
+        return False
+    # If the file lives inside a known project directory, it's fine.
+    if parts[0].lower() in {d.lower() for d in _PROJECT_DIRS}:
+        return False
+    # Only redirect script/code files at the workspace root level.
+    if len(parts) == 1 and resolved.suffix.lower() in _SCRIPT_EXTENSIONS:
+        return True
+    return False
+
+
+def _redirect_to_tmp_code(ctx: ToolContext, path: str) -> tuple["Path", str]:
+    """Redirect a scratch file path to .ker/tmp_code/ and return (new_resolved, new_display_path)."""
+    # Normalise to forward slashes for consistent handling
+    normalised = path.replace("\\", "/")
+    # Strip leading slashes/dots to get a clean relative path
+    clean = normalised.lstrip("./")
+    new_rel = f".ker/tmp_code/{clean}"
+    new_resolved = safe_path(ctx.workspace, new_rel)
+    return new_resolved, new_rel
 
 
 def read_file(ctx: ToolContext, path: str) -> str:
@@ -14,9 +57,14 @@ def read_file(ctx: ToolContext, path: str) -> str:
 
 def write_file(ctx: ToolContext, path: str, content: str) -> str:
     p = safe_path(ctx.workspace, path)
+    if _is_scratch_file(ctx.workspace, p):
+        p, display_path = _redirect_to_tmp_code(ctx, path)
+        logger.info("Redirected scratch file %s -> %s", path, display_path)
+    else:
+        display_path = path
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
-    return f"Wrote {len(content)} bytes to {path}"
+    return f"Wrote {len(content)} bytes to {display_path}"
 
 
 def edit_file(ctx: ToolContext, path: str, old_text: str, new_text: str) -> str:

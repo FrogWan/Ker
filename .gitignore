@@ -27,6 +27,8 @@ dist/
 .env
 .env.*
 .ker/
+.browser_profile/
+.browser_data/
 
 # IDE/editor
 .idea/

@@ -23,6 +23,11 @@ usage guidelines and environment-specific notes — not tool definitions.
 - Always read before write — understand what's there before changing it.
 - For edits, ensure exact match on the old content before replacing.
 - Prefer small, targeted edits over full rewrites.
+- **Scratch / temporary code**: Always write scratch scripts and temporary code to
+  `.ker/tmp_code/` (e.g., `.ker/tmp_code/read_outlook.py`). Never place generated
+  scripts in the project root — that pollutes the repository. Files written to the
+  project root outside of `src/`, `tests/`, or other project directories will be
+  automatically redirected to `.ker/tmp_code/`.
 
 ## Memory Tools
 

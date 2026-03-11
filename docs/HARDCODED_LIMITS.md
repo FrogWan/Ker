@@ -52,7 +52,6 @@ All hardcoded numeric limits, thresholds, and caps in the Ker codebase.
 | 7,200 | `src/ker/tools/tool_longtask.py` | 19 | Long task iteration timeout (2 hr) |
 | 3,600 | `src/ker/tools/tool_capture.py` | 23 | Capture agent conversation timeout (1 hr) |
 | 30 | `src/ker/tools/tool_mcp.py` | 22, 89 | MCP tool default timeout |
-| 30 | `src/ker/config.py` | 23 | MCP computer_use tool timeout |
 | 300 | `src/ker/llm/github_copilot.py` | 567 | Copilot HTTP client timeout (5 min) |
 | 30 | `src/ker/llm/github_copilot.py` | 155, 174, 194 | GitHub API request timeouts |
 | 300 | `src/ker/skills/openai-image-gen/scripts/gen.py` | 202 | Image generation request timeout (5 min) |

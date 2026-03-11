@@ -60,14 +60,6 @@ usage guidelines and environment-specific notes — not tool definitions.
 - Evolution log lives at `.ker/memory/evolution/log.jsonl`.
 - Changes are always additive (1-5 lines) and conservative — the cycle skips if no clear pattern.
 
-## Computer Use (MCP: computer_use)
-
-- Built-in MCP server (Windows-MCP) providing desktop control via `mcp_computer_use_*` tools.
-- Uses native Windows UI Automation — returns labeled interactive elements.
-- Key tools: Snapshot, Click, Type, Shortcut, Scroll, App, PowerShell, FileSystem, Clipboard.
-- **Always Snapshot first** — use element `label` IDs for reliable targeting.
-- Read the `computer-use` skill for detailed workflow patterns.
-
 ## Your Environment
 
 <!-- Fill in project-specific details below -->

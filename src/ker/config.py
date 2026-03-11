@@ -16,12 +16,6 @@ BUILTIN_MCP_SERVERS: dict[str, dict] = {
         ],
         "builtin": True,
     },
-    "computer_use": {
-        "command": "uvx",
-        "args": ["windows-mcp"],
-        "builtin": True,
-        "tool_timeout": 30,
-    },
 }
 
 

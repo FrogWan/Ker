@@ -7,6 +7,23 @@ import os
 
 from dotenv import load_dotenv
 
+BUILTIN_MCP_SERVERS: dict[str, dict] = {
+    "chrome_devtools": {
+        "command": "npx",
+        "args": [
+            "-y", "chrome-devtools-mcp@latest",
+            "--executable-path=C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+        ],
+        "builtin": True,
+    },
+    "computer_use": {
+        "command": "uvx",
+        "args": ["windows-mcp"],
+        "builtin": True,
+        "tool_timeout": 30,
+    },
+}
+
 
 @dataclass
 class Settings:
@@ -30,6 +47,17 @@ class Settings:
     debug_rebuild_snapshot_enabled: bool
     mcp_servers: dict
     memory_consolidation_window: int
+
+
+def _merge_mcp_servers(user_config: dict) -> dict:
+    """Merge built-in MCP servers with user config.
+
+    User config takes precedence. Set ``{"enabled": false}`` to disable a
+    built-in server.
+    """
+    merged = dict(BUILTIN_MCP_SERVERS)
+    merged.update(user_config)
+    return {k: v for k, v in merged.items() if v.get("enabled", True) is not False}
 
 
 def load_settings() -> Settings:
@@ -68,6 +96,6 @@ def load_settings() -> Settings:
         kerweb_poll_interval_sec=float(get("kerweb_poll_interval_sec", "KERWEB_POLL_INTERVAL_SEC", "1.0")),
         log_retention_days=int(get("log_retention_days", "LOG_RETENTION_DAYS", "30")),
         debug_rebuild_snapshot_enabled=get("debug_rebuild_snapshot_enabled", "DEBUG_REBUILD_SNAPSHOT_ENABLED", "1") == "1",
-        mcp_servers=config.get("mcp_servers", {}),
+        mcp_servers=_merge_mcp_servers(config.get("mcp_servers", {})),
         memory_consolidation_window=int(get("memory_consolidation_window", "MEMORY_CONSOLIDATION_WINDOW", "50")),
     )

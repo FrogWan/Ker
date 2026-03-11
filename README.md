@@ -188,7 +188,7 @@ MCP tools are registered dynamically at startup with names prefixed `mcp_{server
 | `skill` | Manage skills: `list`, `show`, `read`, `install` |
 | `read_memory` | Search short-term memory (daily logs, chat history, session) |
 | `write_memory` | Save/remove facts in long-term memory (MEMORY.md) |
-| `web_search` | Search the web via Brave API |
+| `web_search` | Search the web via DuckDuckGo |
 | `web_fetch` | Fetch URL and extract readable content (HTML → Markdown) |
 | `cron` | Manage scheduled jobs: `add`, `list`, `remove` |
 | `message` | Send a direct message to a channel peer |

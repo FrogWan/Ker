@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import html
 import json
-import os
 import re
 from urllib.parse import urlparse
 
@@ -14,26 +13,19 @@ USER_AGENT = "Mozilla/5.0"
 
 
 def web_search(ctx: ToolContext, query: str, count: int = 5) -> str:
-    api_key = os.getenv("BRAVE_API_KEY", "")
-    if not api_key:
-        return "Error: Brave Search API key not configured. Set BRAVE_API_KEY."
+    from duckduckgo_search import DDGS
+
     n = min(max(count, 1), 10)
     try:
-        r = httpx.get(
-            "https://api.search.brave.com/res/v1/web/search",
-            params={"q": query, "count": n},
-            headers={"Accept": "application/json", "X-Subscription-Token": api_key},
-            timeout=10.0,
-        )
-        r.raise_for_status()
-        results = r.json().get("web", {}).get("results", [])[:n]
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=n))
         if not results:
             return f"No results for: {query}"
         lines = [f"Results for: {query}\n"]
         for i, item in enumerate(results, 1):
-            lines.append(f"{i}. {item.get('title', '')}\n   {item.get('url', '')}")
-            if item.get("description"):
-                lines.append(f"   {item['description']}")
+            lines.append(f"{i}. {item.get('title', '')}\n   {item.get('href', '')}")
+            if item.get("body"):
+                lines.append(f"   {item['body']}")
         return "\n".join(lines)
     except Exception as exc:
         return f"Error: {exc}"

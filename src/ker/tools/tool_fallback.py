@@ -16,7 +16,7 @@ from ker.tools.tool_base import ToolContext
 log = get_logger("fallback")
 
 DEFAULT_TIMEOUT = 7200  # 2 hours
-MAX_OUTPUT = 10_000  # chars for notification
+MAX_OUTPUT = 30_000  # chars for notification
 FALLBACK_DIR = "fallback"
 
 # Keep references to background tasks so they aren't garbage-collected.

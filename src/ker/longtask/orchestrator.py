@@ -184,9 +184,9 @@ class LongTaskOrchestrator:
             if st.blocked_by:
                 line += f" blocked_by: {st.blocked_by}"
             if st.status == "done" and st.result:
-                line += f"\n  Result: {st.result[:300]}"
+                line += f"\n  Result: {st.result[:1000]}"
             elif st.status == "failed" and st.result:
-                line += f"\n  Error: {st.result[:300]}"
+                line += f"\n  Error: {st.result[:1000]}"
             subtask_lines.append(line)
 
         prompt = template.format(

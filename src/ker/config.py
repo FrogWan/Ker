@@ -82,7 +82,7 @@ def load_settings() -> Settings:
         ker_root=ker_root,
         model_id=get("model_id", "MODEL_ID", "claude-opus-4-6"),
         anthropic_api_key=get("anthropic_api_key", "ANTHROPIC_API_KEY", ""),
-        max_tokens=int(get("max_tokens", "MAX_TOKENS", "8096")),
+        max_tokens=int(get("max_tokens", "MAX_TOKENS", "16384")),
         llm_provider=get("llm_provider", "LLM_PROVIDER", "anthropic"),
         azure_openai_key=get("azure_openai_key", "AZURE_OPENAI_KEY", ""),
         azure_openai_endpoint=get("azure_openai_endpoint", "AZURE_OPENAI_ENDPOINT", ""),

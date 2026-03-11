@@ -9,7 +9,7 @@ All hardcoded numeric limits, thresholds, and caps in the Ker codebase.
 
 | Value | File | Line | Description |
 |-------|------|------|-------------|
-| 8096 | `src/ker/config.py` | 85 | Default `max_tokens` for LLM responses |
+| 16384 | `src/ker/config.py` | 85 | Default `max_tokens` for LLM responses |
 
 ## Loop / Iteration Limits
 
@@ -17,7 +17,7 @@ All hardcoded numeric limits, thresholds, and caps in the Ker codebase.
 |-------|------|------|-------------|
 | 120 | `src/ker/agent/agent_loop.py` | 46 | Max tool iterations per turn |
 | 50 | `src/ker/tools/tool_longtask.py` | 31 | Default max iterations for `long_task` |
-| 10 | `src/ker/tools/tool_registry.py` | 26 | Schema max for `long_task` `max_iterations` |
+| 50 | `src/ker/tools/tool_registry.py` | 26 | Schema max for `long_task` `max_iterations` |
 | 3 | `src/ker/llm/github_copilot.py` | 153 | API key refresh retry attempts |
 | 60 | `src/ker/llm/github_copilot.py` | 184 | OAuth device flow polling iterations (5 min max) |
 | 3 | `src/ker/longtask/orchestrator.py` | 18 | Max supervisor respawns |
@@ -28,17 +28,17 @@ All hardcoded numeric limits, thresholds, and caps in the Ker codebase.
 | Value | File | Line | Description |
 |-------|------|------|-------------|
 | 64 | `src/ker/agent/context/session.py` | 14 | Session name max length |
-| 4,000 | `src/ker/agent/context/context_guard.py` | 11 | Tool result truncation limit (chars) |
-| 10,000 | `src/ker/tools/tool_exec.py` | 116 | Command output truncation |
-| 10,000 | `src/ker/tools/tool_fallback.py` | 19 | Fallback notification max output |
+| 12,000 | `src/ker/agent/context/context_guard.py` | 11 | Tool result truncation limit (chars) |
+| 30,000 | `src/ker/tools/tool_exec.py` | 116 | Command output truncation |
+| 30,000 | `src/ker/tools/tool_fallback.py` | 19 | Fallback notification max output |
 | 20,000 | `src/ker/agent/context/prompt_builder.py` | 28 | Per-file prompt cap |
-| 150,000 | `src/ker/agent/context/prompt_builder.py` | 28 | Total prompt builder cap |
-| 50,000 | `src/ker/tools/tool_web.py` | 34 | Web fetch max chars |
+| 300,000 | `src/ker/agent/context/prompt_builder.py` | 28 | Total prompt builder cap |
+| 100,000 | `src/ker/tools/tool_web.py` | 34 | Web fetch max chars |
 | 2,000 | `src/ker/tools/tool_longtask.py` | 460, 464 | Review feedback / reviewer output tail |
 | 500 | `src/ker/tools/tool_longtask.py` | 285 | Feedback truncation |
-| 300 | `src/ker/longtask/orchestrator.py` | 187, 189 | Result / error preview length |
+| 1,000 | `src/ker/longtask/orchestrator.py` | 187, 189 | Result / error preview length |
 | 2,000 | `src/ker/longtask/orchestrator.py` | 254 | Synthesis result max length |
-| 220 | `src/ker/agent/context/memory.py` | 286, 349 | Memory hit snippet max length |
+| 500 | `src/ker/agent/context/memory.py` | 286, 349 | Memory hit snippet max length |
 
 ## Timeout Limits (seconds)
 

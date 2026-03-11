@@ -25,7 +25,7 @@ BUILTIN_TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "memory" / "templa
 
 
 class PromptBuilder:
-    def __init__(self, ker_root: Path, per_file_cap: int = 20_000, total_cap: int = 150_000) -> None:
+    def __init__(self, ker_root: Path, per_file_cap: int = 20_000, total_cap: int = 300_000) -> None:
         self.ker_root = ker_root
         self.per_file_cap = per_file_cap
         self.total_cap = total_cap

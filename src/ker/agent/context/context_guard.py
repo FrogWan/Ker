@@ -8,7 +8,7 @@ log = get_logger("context_guard")
 
 
 class ContextGuard:
-    def truncate_large_tool_results(self, messages: list[dict[str, Any]], max_chars: int = 4000) -> list[dict[str, Any]]:
+    def truncate_large_tool_results(self, messages: list[dict[str, Any]], max_chars: int = 12000) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for msg in messages:
             if msg.get("role") != "user" or not isinstance(msg.get("content"), list):

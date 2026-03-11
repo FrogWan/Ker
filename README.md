@@ -130,7 +130,7 @@ Settings are loaded from: `.ker/config.json` → `.env` → defaults.
 | `MODEL_ID` | `claude-opus-4-6` | Model identifier |
 | `ANTHROPIC_API_KEY` | *(empty)* | Anthropic API key |
 | `GITHUB_COPILOT_TOKEN` | *(empty)* | GitHub Copilot access token (optional, skips OAuth) |
-| `MAX_TOKENS` | `8096` | Max output tokens per LLM call |
+| `MAX_TOKENS` | `16384` | Max output tokens per LLM call |
 | `KERWEB_ENABLED` | `1` | Enable KerWeb channel |
 | `KERWEB_API_KEY` | *(empty)* | KerWeb API key |
 | `KERWEB_BASE_URL` | `https://kerweb-app.azurewebsites.net` | KerWeb backend URL |
@@ -151,7 +151,7 @@ Each agent can override settings via `.ker/agents/{name}/config.json`:
 {
   "enabled": true,
   "model_id": "claude-opus-4-6",
-  "max_tokens": 8096,
+  "max_tokens": 16384,
   "tools": ["read_file", "write_file", "exec"],
   "skills": ["claude", "github"]
 }

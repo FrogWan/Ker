@@ -112,8 +112,8 @@ async def exec_command(ctx: ToolContext, command: str, timeout: int = 60, workin
         log.info("exec DONE: cmd=%s elapsed=%.1fs exit=%d result_len=%d", repr(command[:80]), elapsed, returncode, len(result))
     else:
         log.info("exec DONE: cmd=%s elapsed=%.1fs result_len=%d", repr(command[:80]), elapsed, len(result))
-    if len(result) > 10000:
-        result = result[:10000] + f"\n... (truncated, {len(result) - 10000} more chars)"
+    if len(result) > 30000:
+        result = result[:30000] + f"\n... (truncated, {len(result) - 30000} more chars)"
     return result or "(no output)"
 
 

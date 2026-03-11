@@ -31,7 +31,7 @@ def web_search(ctx: ToolContext, query: str, count: int = 5) -> str:
         return f"Error: {exc}"
 
 
-def web_fetch(ctx: ToolContext, url: str, extractMode: str = "markdown", maxChars: int = 50000) -> str:
+def web_fetch(ctx: ToolContext, url: str, extractMode: str = "markdown", maxChars: int = 100000) -> str:
     valid, err = _validate_url(url)
     if not valid:
         return json.dumps({"error": f"URL validation failed: {err}", "url": url}, ensure_ascii=False)

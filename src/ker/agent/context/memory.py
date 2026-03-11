@@ -283,7 +283,7 @@ class MemoryStore:
                 continue
             age_days = max(0.0, (now - chunks[i]["ts"]) / 86400.0)
             score = base * math.exp(-0.02 * age_days)
-            scored.append(MemoryHit(path=chunks[i]["path"], score=score, snippet=chunks[i]["text"][:220]))
+            scored.append(MemoryHit(path=chunks[i]["path"], score=score, snippet=chunks[i]["text"][:500]))
         scored.sort(key=lambda x: x.score, reverse=True)
         return scored[:top_k]
 
@@ -346,7 +346,7 @@ class MemoryStore:
                 continue
             age_days = max(0.0, (now - chunks[i]["ts"]) / 86400.0)
             score = base * math.exp(-0.02 * age_days)
-            scored.append(MemoryHit(path=chunks[i]["path"], score=score, snippet=chunks[i]["text"][:220]))
+            scored.append(MemoryHit(path=chunks[i]["path"], score=score, snippet=chunks[i]["text"][:500]))
         scored.sort(key=lambda x: x.score, reverse=True)
         return scored[:top_k]
 

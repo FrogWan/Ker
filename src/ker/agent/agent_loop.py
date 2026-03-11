@@ -44,6 +44,7 @@ class AgentLoop:
         model_id: str,
         max_tokens: int,
         max_tool_iterations: int = 120,
+        turn_timeout: float = 600.0,
         ker_root: Path | None = None,
     ) -> None:
         self.provider = provider
@@ -59,6 +60,7 @@ class AgentLoop:
         self.model_id = model_id
         self.max_tokens = max_tokens
         self.max_tool_iterations = max_tool_iterations
+        self.turn_timeout = turn_timeout
 
     def _infer_session_type(self, inbound: InboundMessage) -> str:
         """Infer session type from inbound message metadata."""
@@ -205,16 +207,24 @@ class AgentLoop:
             if thinking_callback:
                 thinking_callback(f"Model iteration {iteration + 1}")
 
-            response = await self.context_guard.guard_call(
-                lambda guarded_messages: self.provider.create_message(
-                    model=effective_model,
-                    system=system,
-                    messages=guarded_messages,
-                    tools=tools,
-                    max_tokens=effective_max_tokens,
-                ),
-                current_messages,
-            )
+            try:
+                response = await asyncio.wait_for(
+                    self.context_guard.guard_call(
+                        lambda guarded_messages: self.provider.create_message(
+                            model=effective_model,
+                            system=system,
+                            messages=guarded_messages,
+                            tools=tools,
+                            max_tokens=effective_max_tokens,
+                        ),
+                        current_messages,
+                    ),
+                    timeout=self.turn_timeout,
+                )
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"LLM call timed out after {self.turn_timeout:.0f}s"
+                )
 
             assistant_blocks = []
             for block in response.content:

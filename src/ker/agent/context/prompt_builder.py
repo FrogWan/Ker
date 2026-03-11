@@ -144,9 +144,14 @@ class PromptBuilder:
     def _build_skills(self, skills_block: str) -> str | None:
         return skills_block or None
 
-    def _build_memory(self, memory_context: str) -> str | None:
-        memory_md_path = self.ker_root / "MEMORY.md"
+    def _build_memory(self, memory_context: str, working_context: str = "") -> str | None:
         memory_parts: list[str] = []
+
+        # Working context — injected above Evergreen Memory
+        if working_context:
+            memory_parts.append("### Working Context\n" + working_context)
+
+        memory_md_path = self.ker_root / "MEMORY.md"
         if memory_md_path.exists():
             memory_md = memory_md_path.read_text(encoding="utf-8").strip()
             if memory_md:
@@ -204,6 +209,7 @@ class PromptBuilder:
         agent_name: str,
         skills_block: str = "",
         memory_context: str = "",
+        working_context: str = "",
         model_id: str = "",
         channel: str = "cli",
         session_name: str = "default",
@@ -253,7 +259,7 @@ class PromptBuilder:
 
         # Memory — main only
         if session_type == "main":
-            memory = self._build_memory(memory_context)
+            memory = self._build_memory(memory_context, working_context=working_context)
             if memory:
                 sections.append(memory)
 

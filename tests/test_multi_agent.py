@@ -108,6 +108,9 @@ def test_provider_factory():
         debug_rebuild_snapshot_enabled=False,
         mcp_servers={},
         memory_consolidation_window=50,
+        memory_max_facts=200,
+        chat_history_max_entries=500,
+        error_log_max_entries=1000,
     )
 
     from ker.llm.anthropic_provider import AnthropicProvider
@@ -142,6 +145,9 @@ def test_provider_factory_azure():
         debug_rebuild_snapshot_enabled=False,
         mcp_servers={},
         memory_consolidation_window=50,
+        memory_max_facts=200,
+        chat_history_max_entries=500,
+        error_log_max_entries=1000,
     )
 
     provider = create_provider(settings)

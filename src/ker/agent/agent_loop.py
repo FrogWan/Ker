@@ -14,6 +14,7 @@ from ker.agent.context.memory import MemoryStore
 from ker.agent.context.prompt_builder import PromptBuilder
 from ker.agent.context.session import SessionStore
 from ker.agent.context.skills import SkillsManager, render_skills_block
+from ker.agent.context.working_memory import WorkingMemoryManager
 from ker.llm.base import LLMProvider
 from ker.logger import get_logger
 from ker.media import load_media_base64
@@ -46,6 +47,8 @@ class AgentLoop:
         max_tool_iterations: int = 120,
         turn_timeout: float = 600.0,
         ker_root: Path | None = None,
+        working_memory: WorkingMemoryManager | None = None,
+        consolidation_interval: int = 50,
     ) -> None:
         self.provider = provider
         self.session_store = session_store
@@ -61,6 +64,9 @@ class AgentLoop:
         self.max_tokens = max_tokens
         self.max_tool_iterations = max_tool_iterations
         self.turn_timeout = turn_timeout
+        self.working_memory = working_memory
+        self.consolidation_interval = consolidation_interval
+        self._turn_counter: int = 0
 
     def _infer_session_type(self, inbound: InboundMessage) -> str:
         """Infer session type from inbound message metadata."""
@@ -141,10 +147,16 @@ class AgentLoop:
         summary_xml = self.skills_manager.render_skills_summary_xml(agent_name=agent_name)
         skills_block = render_skills_block(active, summary_xml)
 
+        # Load working context
+        working_context = ""
+        if self.working_memory and session_type == "main":
+            working_context = self.working_memory.render_for_prompt(agent_name)
+
         system_prompt = self.prompt_builder.build(
             agent_name=agent_name,
             skills_block=skills_block,
             memory_context=memory_context,
+            working_context=working_context,
             model_id=model_id,
             channel=inbound.channel,
             session_name=inbound.session_name,
@@ -197,6 +209,21 @@ class AgentLoop:
 
             if inbound.sender_id != "system":
                 self.memory_store.add_daily(f"{inbound.sender_id}: {inbound.text}")
+
+            # Update working memory
+            if self.working_memory and session_type == "main":
+                try:
+                    self.working_memory.update_from_turn(agent_name, session_id, self.session_store)
+                except Exception as wm_exc:
+                    log.warning("Working memory update failed: %s", wm_exc)
+
+            # Consolidation check
+            self._turn_counter += 1
+            if self.consolidation_interval > 0 and self._turn_counter % self.consolidation_interval == 0:
+                try:
+                    await self.memory_store.auto_consolidate()
+                except Exception as cons_exc:
+                    log.warning("Auto-consolidation failed: %s", cons_exc)
 
             _elapsed = _time.monotonic() - _turn_start
             log.info(

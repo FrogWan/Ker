@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ker.agent.context.memory import MemoryStore
     from ker.agent.context.skills import SkillsManager
+    from ker.agent.context.working_memory import WorkingMemoryManager
     from ker.agent.subagent import SubagentManager
     from ker.scheduler.cron import CronService
     from ker.types import OutboundMessage
@@ -19,6 +20,7 @@ class ToolContext:
     ker_root: Path = field(default_factory=lambda: Path.cwd() / ".ker")
     cron_service: CronService | None = None
     memory_store: MemoryStore | None = None
+    working_memory: WorkingMemoryManager | None = None
     subagent_manager: SubagentManager | None = None
     skills_manager: SkillsManager | None = None
     outbound_queue: asyncio.Queue[OutboundMessage] | None = None

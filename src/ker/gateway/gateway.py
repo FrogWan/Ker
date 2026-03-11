@@ -10,6 +10,7 @@ from ker.agent.context.chat_history import ChatHistory
 from ker.agent.context.context_guard import ContextGuard
 from ker.agent.context.memory import MemoryStore
 from ker.agent.context.prompt_builder import PromptBuilder
+from ker.agent.context.working_memory import WorkingMemoryManager
 from ker.agent.context.session import (
     SESSION_NAME_ALLOWED_CHARS_DESC,
     SESSION_NAME_MAX_LENGTH,
@@ -60,6 +61,7 @@ class Gateway:
         self.skills_manager = SkillsManager(skill_roots, workspace=settings.workspace, ker_root=settings.ker_root)
 
         self.context_guard = ContextGuard()
+        self.working_memory = WorkingMemoryManager(settings.ker_root)
 
         # LLM provider
         self.provider: LLMProvider = create_provider(settings)
@@ -79,6 +81,7 @@ class Gateway:
             workspace=settings.workspace,
             ker_root=settings.ker_root,
             memory_store=self.memory_store,
+            working_memory=self.working_memory,
             skills_manager=self.skills_manager,
             subagent_manager=self.subagents,
             cron_service=self.cron,
@@ -107,6 +110,8 @@ class Gateway:
             model_id=settings.model_id,
             max_tokens=settings.max_tokens,
             ker_root=settings.ker_root,
+            working_memory=self.working_memory,
+            consolidation_interval=settings.memory_consolidation_window,
         )
 
         # Current session state
@@ -585,6 +590,12 @@ class Gateway:
                 "## Completed\n<!-- Move completed tasks here -->\n",
                 encoding="utf-8",
             )
+
+        # Run memory consolidation on startup
+        try:
+            await self.memory_store.auto_consolidate()
+        except Exception as exc:
+            log.warning("Startup consolidation failed: %s", exc)
 
         # Bootstrap self-evolution cron job
         self._ensure_evolution_cron()

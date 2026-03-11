@@ -30,6 +30,9 @@ def _make_settings(tmp_path: Path) -> Settings:
         debug_rebuild_snapshot_enabled=False,
         mcp_servers={},
         memory_consolidation_window=50,
+        memory_max_facts=200,
+        chat_history_max_entries=500,
+        error_log_max_entries=1000,
     )
 
 

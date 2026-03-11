@@ -90,16 +90,34 @@ All hardcoded numeric limits, thresholds, and caps in the Ker codebase.
 | 60s | `src/ker/scheduler/heartbeat.py` | 29 | Heartbeat default interval |
 | 5s | `src/ker/llm/github_copilot.py` | 185 | OAuth polling sleep |
 
+## Memory System Limits
+
+| Value | File | Description |
+|-------|------|-------------|
+| 4,000 chars | `src/ker/agent/context/working_memory.py` | Working context max size |
+| 10 | `src/ker/agent/context/working_memory.py` | Session records scanned for working context |
+| 200 | `src/ker/config.py` | Max long-term facts (`memory_max_facts`) |
+| 500 | `src/ker/config.py` | Chat history max entries before rotation (`chat_history_max_entries`) |
+| 1,000 | `src/ker/config.py` | Error log max entries before rotation (`error_log_max_entries`) |
+| ~50 | `src/ker/agent/context/scorer.py` | Stop words list size |
+| 0.5 | `src/ker/agent/context/memory.py` | Default importance for legacy entries |
+| 1.5x | `src/ker/agent/context/scorer.py` | Working memory source weight |
+| 1.2x | `src/ker/agent/context/scorer.py` | Daily entries source weight |
+| 1.0x | `src/ker/agent/context/scorer.py` | Episodes source weight |
+| 0.8x | `src/ker/agent/context/scorer.py` | Chat history source weight |
+| 80% / 20% | `src/ker/agent/context/memory.py`, `chat_history.py` | Rotation: archive 80%, keep 20% |
+| 50 | `src/ker/config.py` | Consolidation interval (turns between auto-consolidation) |
+
 ## Thresholds / Ratios
 
 | Value | File | Line | Description |
 |-------|------|------|-------------|
-| 0.70 | `src/ker/agent/context/memory.py` | 24 | Memory dedup similarity threshold |
+| 0.70 | `src/ker/agent/context/memory.py` | — | Memory dedup similarity threshold |
 | 70% / 20% | `src/ker/agent/context/prompt_builder.py` | 40–41 | Smart truncate head / tail split |
 | 20% (min 4) | `src/ker/agent/context/context_guard.py` | 32 | History compaction keep ratio |
 | 50% (min 2) | `src/ker/agent/context/context_guard.py` | 33 | History compaction compress ratio |
 | 30s | `src/ker/longtask/orchestrator.py` | 17 | Notification cooldown between milestones |
-| 50 | `src/ker/config.py` | 100 | Memory consolidation window |
+| 50 | `src/ker/config.py` | — | Memory consolidation window |
 
 ## Gateway Sleep Intervals
 

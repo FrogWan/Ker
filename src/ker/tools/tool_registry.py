@@ -14,7 +14,8 @@ TOOLS: list[dict[str, Any]] = [
     {"name": "edit_file", "description": "Replace old text with new text in a file.", "input_schema": {"type": "object", "properties": {"path": {"type": "string", "minLength": 1}, "old_text": {"type": "string", "minLength": 1}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
     {"name": "list_dir", "description": "List directory contents in workspace.", "input_schema": {"type": "object", "properties": {"path": {"type": "string", "minLength": 1}}, "required": ["path"]}},
     {"name": "skill", "description": "Manage and inspect skills. Actions: list, show, read, install.", "input_schema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["list", "show", "read", "install"]}, "name": {"type": "string"}, "include_unavailable": {"type": "boolean"}, "content": {"type": "string", "description": "SKILL.md content for action=install"}}, "required": ["action"]}},
-    {"name": "read_memory", "description": "Search short-term memory: recent conversations, daily logs, and session context. Long-term memory (MEMORY.md) is already in your system prompt — no need to search for it.", "input_schema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "minimum": 1, "maximum": 20}, "source": {"type": "string", "enum": ["all", "session", "chat_history", "daily"], "description": "Filter which sources to search (default: all)"}}, "required": []}},
+    {"name": "read_memory", "description": "Search short-term memory: recent conversations, daily logs, episodes, and session context. Long-term memory (MEMORY.md) is already in your system prompt — no need to search for it.", "input_schema": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "minimum": 1, "maximum": 20}, "source": {"type": "string", "enum": ["all", "session", "chat_history", "daily", "episodes", "working"], "description": "Filter which sources to search (default: all)"}}, "required": []}},
+    {"name": "memory_status", "description": "Introspect memory: see what you know, what you're working on, memory stats.", "input_schema": {"type": "object", "properties": {"aspect": {"type": "string", "enum": ["overview", "working", "recent", "stats", "about"]}, "topic": {"type": "string", "description": "For aspect='about': search all tiers for this topic"}}, "required": ["aspect"]}},
     {"name": "write_memory", "description": "Save an important fact to long-term memory. Use for user preferences, project facts, and patterns worth remembering across sessions.", "input_schema": {"type": "object", "properties": {"fact": {"type": "string", "minLength": 5}, "category": {"type": "string", "enum": ["user", "project", "preferences", "patterns", "general"]}, "action": {"type": "string", "enum": ["add", "remove"]}}, "required": ["fact"]}},
 {"name": "web_search", "description": "Search the web via DuckDuckGo.", "input_schema": {"type": "object", "properties": {"query": {"type": "string", "minLength": 1}, "count": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["query"]}},
     {"name": "web_fetch", "description": "Fetch URL and extract readable content.", "input_schema": {"type": "object", "properties": {"url": {"type": "string", "minLength": 1}, "extractMode": {"type": "string", "enum": ["markdown", "text"]}, "maxChars": {"type": "integer", "minimum": 100}}, "required": ["url"]}},
@@ -39,7 +40,7 @@ class ToolRegistry:
     def _register_all(self) -> None:
         from ker.tools.tool_exec import exec_command, bash
         from ker.tools.tool_filesystem import read_file, write_file, edit_file, list_dir
-        from ker.tools.tool_memory import read_memory, write_memory
+        from ker.tools.tool_memory import read_memory, write_memory, memory_status
         from ker.tools.tool_web import web_search, web_fetch
         from ker.tools.tool_cron import cron
         from ker.tools.tool_message import message
@@ -62,6 +63,7 @@ class ToolRegistry:
             "skill": lambda action, name="", include_unavailable=False, content="": skill(ctx, action=action, name=name, include_unavailable=include_unavailable, content=content),
             "read_memory": lambda query="", top_k=5, source="all": read_memory(ctx, query=query, top_k=top_k, source=source),
             "write_memory": lambda fact, category="general", action="add": write_memory(ctx, fact=fact, category=category, action=action),
+            "memory_status": lambda aspect="overview", topic="": memory_status(ctx, aspect=aspect, topic=topic),
             "web_search": lambda query, count=5: web_search(ctx, query=query, count=count),
             "web_fetch": lambda url, extractMode="markdown", maxChars=50000: web_fetch(ctx, url=url, extractMode=extractMode, maxChars=maxChars),
             "cron": lambda action, message="", every_seconds=None, cron_expr=None, at=None, job_id=None, tz=None: cron(ctx, action=action, message=message, every_seconds=every_seconds, cron_expr=cron_expr, at=at, job_id=job_id, tz=tz),

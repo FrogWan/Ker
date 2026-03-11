@@ -41,6 +41,9 @@ class Settings:
     debug_rebuild_snapshot_enabled: bool
     mcp_servers: dict
     memory_consolidation_window: int
+    memory_max_facts: int
+    chat_history_max_entries: int
+    error_log_max_entries: int
 
 
 def _merge_mcp_servers(user_config: dict) -> dict:
@@ -92,4 +95,7 @@ def load_settings() -> Settings:
         debug_rebuild_snapshot_enabled=get("debug_rebuild_snapshot_enabled", "DEBUG_REBUILD_SNAPSHOT_ENABLED", "1") == "1",
         mcp_servers=_merge_mcp_servers(config.get("mcp_servers", {})),
         memory_consolidation_window=int(get("memory_consolidation_window", "MEMORY_CONSOLIDATION_WINDOW", "50")),
+        memory_max_facts=int(get("memory_max_facts", "MEMORY_MAX_FACTS", "200")),
+        chat_history_max_entries=int(get("chat_history_max_entries", "CHAT_HISTORY_MAX_ENTRIES", "500")),
+        error_log_max_entries=int(get("error_log_max_entries", "ERROR_LOG_MAX_ENTRIES", "1000")),
     )

@@ -13,7 +13,7 @@ USER_AGENT = "Mozilla/5.0"
 
 
 def web_search(ctx: ToolContext, query: str, count: int = 5) -> str:
-    from duckduckgo_search import DDGS
+    from ddgs import DDGS
 
     n = min(max(count, 1), 10)
     try:

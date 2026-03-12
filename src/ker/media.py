@@ -15,14 +15,25 @@ SUPPORTED_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
 
 def load_media_base64(ker_root: Path, media_ref: dict[str, Any]) -> str | None:
-    """Read a media file from .ker/media/{path} and return base64-encoded data.
+    """Return base64-encoded image data from a media reference.
+
+    Supports two sources:
+    - ``data`` key: already base64-encoded (e.g. from Teams inline images)
+    - ``path`` key: relative path under .ker/media/
 
     Returns None if the file doesn't exist or the media_type is unsupported.
     """
     media_type = media_ref.get("media_type", "")
-    rel_path = media_ref.get("path", "")
+    if media_type not in SUPPORTED_TYPES:
+        return None
 
-    if not rel_path or media_type not in SUPPORTED_TYPES:
+    # Fast path: base64 data already present
+    inline = media_ref.get("data")
+    if inline:
+        return inline
+
+    rel_path = media_ref.get("path", "")
+    if not rel_path:
         return None
 
     file_path = ker_root / "media" / rel_path

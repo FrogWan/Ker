@@ -56,6 +56,7 @@ All hardcoded numeric limits, thresholds, and caps in the Ker codebase.
 | 30 | `src/ker/llm/github_copilot.py` | 155, 174, 194 | GitHub API request timeouts |
 | 300 | `src/ker/skills/openai-image-gen/scripts/gen.py` | 202 | Image generation request timeout (5 min) |
 | 10 | `src/ker/channels/kerweb.py` | 41 | KerWeb HTTP client timeout |
+| 30 | `src/ker/channels/teams.py` | — | Teams MCP call_tool timeout |
 | 5–10 | various `wait_for` calls | — | Process kill / wait timeouts |
 
 ## Size / Count Limits
@@ -88,6 +89,8 @@ All hardcoded numeric limits, thresholds, and caps in the Ker codebase.
 | 0.05s | `src/ker/channels/base.py` | 45 | Base channel poll sleep |
 | 5s | `src/ker/longtask/orchestrator.py` | 16 | Task monitor poll interval |
 | 60s | `src/ker/scheduler/heartbeat.py` | 29 | Heartbeat default interval |
+| 5.0s | `src/ker/channels/teams.py` | — | Teams MCP poll interval default |
+| 5.0s | `src/ker/config.py` | — | Teams poll interval config default |
 | 5s | `src/ker/llm/github_copilot.py` | 185 | OAuth polling sleep |
 
 ## Memory System Limits

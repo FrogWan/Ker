@@ -85,6 +85,17 @@ def _run_gateway() -> None:
             )
             gateway.register_channel(KerWebPollingChannel(kerweb_config))
 
+    if settings.teams_enabled:
+        from ker.channels.teams import TeamsChannel, TeamsConfig
+
+        teams_config = TeamsConfig(
+            enabled=True,
+            chat_id=settings.teams_chat_id,
+            poll_interval_sec=settings.teams_poll_interval_sec,
+            mcp_command=settings.teams_mcp_command,
+        )
+        gateway.register_channel(TeamsChannel(teams_config))
+
     print("Ker gateway starting...")
     asyncio.run(gateway.run())
 

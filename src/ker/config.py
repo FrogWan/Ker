@@ -7,6 +7,8 @@ import os
 
 from dotenv import load_dotenv
 
+_AGENCY_EXE = r"C:\Users\kuwa\AppData\Roaming\agency\CurrentVersion\agency.exe"
+
 BUILTIN_MCP_SERVERS: dict[str, dict] = {
     "chrome_devtools": {
         "command": "npx",
@@ -14,6 +16,16 @@ BUILTIN_MCP_SERVERS: dict[str, dict] = {
             "-y", "chrome-devtools-mcp@latest",
             "--executable-path=C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
         ],
+        "builtin": True,
+    },
+    "teams": {
+        "command": _AGENCY_EXE,
+        "args": ["mcp", "teams"],
+        "builtin": True,
+    },
+    "workiq": {
+        "command": _AGENCY_EXE,
+        "args": ["mcp", "workiq"],
         "builtin": True,
     },
 }
@@ -37,6 +49,10 @@ class Settings:
     kerweb_base_url: str
     kerweb_api_key: str
     kerweb_poll_interval_sec: float
+    teams_enabled: bool
+    teams_chat_id: str
+    teams_poll_interval_sec: float
+    teams_mcp_command: str
     log_retention_days: int
     debug_rebuild_snapshot_enabled: bool
     mcp_servers: dict
@@ -91,6 +107,10 @@ def load_settings() -> Settings:
         kerweb_base_url=get("kerweb_base_url", "KERWEB_BASE_URL", "https://kerweb-app.azurewebsites.net"),
         kerweb_api_key=get("kerweb_api_key", "KERWEB_API_KEY", ""),
         kerweb_poll_interval_sec=float(get("kerweb_poll_interval_sec", "KERWEB_POLL_INTERVAL_SEC", "1.0")),
+        teams_enabled=get("teams_enabled", "TEAMS_ENABLED", "0") == "1",
+        teams_chat_id=get("teams_chat_id", "TEAMS_CHAT_ID", "48:notes"),
+        teams_poll_interval_sec=float(get("teams_poll_interval_sec", "TEAMS_POLL_INTERVAL_SEC", "5.0")),
+        teams_mcp_command=get("teams_mcp_command", "TEAMS_MCP_COMMAND", r"C:\Users\kuwa\AppData\Roaming\agency\CurrentVersion\agency.exe"),
         log_retention_days=int(get("log_retention_days", "LOG_RETENTION_DAYS", "30")),
         debug_rebuild_snapshot_enabled=get("debug_rebuild_snapshot_enabled", "DEBUG_REBUILD_SNAPSHOT_ENABLED", "1") == "1",
         mcp_servers=_merge_mcp_servers(config.get("mcp_servers", {})),
